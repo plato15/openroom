@@ -780,9 +780,18 @@ describe("first-time setup", () => {
     expect((await fresh("/login", { form: { email: FOUNDER } })).status).toBe(404);
     expect((await fresh("/theme.css")).status).toBe(200);
     expect(await (await fresh("/setup")).text()).toContain("Set up your data room");
-    // Step 1 checks the email, then shows the Resend step with it.
+    // Step 1 checks the email, remembers it, and moves on to the Resend step; Back returns with it filled in.
     expect((await fresh("/setup/email", { form: { email: "nope" } })).status).toBe(400);
-    expect(await (await fresh("/setup/email", { form: { email: FOUNDER } })).text()).toContain("Connect email sending");
+    expect((await fresh("/setup/key")).headers.get("location")).toBe("/setup");
+    const step1 = await fresh("/setup/email", { form: { email: FOUNDER } });
+    expect(step1.headers.get("location")).toBe("/setup/key");
+    const draft = step1.headers.get("set-cookie")!.split(";")[0];
+    const step2 = await (await fresh("/setup/key", { cookie: draft })).text();
+    expect(step2).toContain("Connect email sending");
+    expect(step2).toContain(FOUNDER);
+    expect(step2).toContain('href="/setup">← Back');
+    expect(await (await fresh("/setup", { cookie: draft })).text()).toContain(`value="${FOUNDER}"`);
+    expect((await fresh("/setup/code")).headers.get("location")).toBe("/setup?m=expired");
     expect((await fresh("/setup/start", { form: { email: "nope", resendApiKey: KEY } })).status).toBe(400);
     expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: "sk_live_123" } })).status).toBe(400);
     expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY, mailFrom: "x\r\nBcc: a@b.c" } })).status).toBe(400);
@@ -791,18 +800,20 @@ describe("first-time setup", () => {
 
   it("throws a code away after five wrong tries", async () => {
     const start = await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY } });
-    expect(start.status).toBe(200);
+    expect(start.headers.get("location")).toBe("/setup/code");
+    expect(await (await fresh("/setup/code")).text()).toContain('href="/setup/key">← Back');
     const code = await codeFor(FOUNDER);
     expect(code).toMatch(/^\d{6}$/);
     const wrong = code === "000000" ? "111111" : "000000";
     for (let i = 1; i <= 4; i++) {
       const res = await fresh("/setup/verify", { form: { code: wrong } });
-      expect(await res.text()).toContain(`${5 - i} tries left`);
+      expect(res.headers.get("location")).toBe(`/setup/code?m=wrong&left=${5 - i}`);
     }
-    expect(await (await fresh("/setup/verify", { form: { code: wrong } })).text()).toContain("Too many wrong codes");
-    expect((await fresh("/setup/resend", { form: {} })).status).toBe(400); // nothing pending any more
+    expect(await (await fresh("/setup/code?m=wrong&left=2")).text()).toContain("2 tries left");
+    expect((await fresh("/setup/verify", { form: { code: wrong } })).headers.get("location")).toBe("/setup?m=toomany");
+    expect((await fresh("/setup/resend", { form: {} })).headers.get("location")).toBe("/setup?m=expired"); // nothing pending any more
     const late = await fresh("/setup/verify", { form: { code: code! } });
-    expect(late.status).toBe(400);
+    expect(late.headers.get("location")).toBe("/setup?m=expired");
     expect(late.headers.get("set-cookie")).toBeNull();
   });
 
@@ -810,9 +821,10 @@ describe("first-time setup", () => {
     await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY } });
     const first = await codeFor(FOUNDER);
     // "Send a new code": the newest code works, the previous one does not.
-    expect(await (await fresh("/setup/resend", { form: {} })).text()).toContain("A new code is on its way");
+    expect((await fresh("/setup/resend", { form: {} })).headers.get("location")).toBe("/setup/code?m=new");
+    expect(await (await fresh("/setup/code?m=new")).text()).toContain("A new code is on its way");
     const second = await codeFor(FOUNDER);
-    if (first !== second) expect((await fresh("/setup/verify", { form: { code: first! } })).status).toBe(400);
+    if (first !== second) expect((await fresh("/setup/verify", { form: { code: first! } })).headers.get("location")).toContain("m=wrong");
     const res = await fresh("/setup/verify", { form: { code: second! } });
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/setup/brand");

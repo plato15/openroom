@@ -1,4 +1,5 @@
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
 import { startSession } from "../auth";
 import {
@@ -36,7 +37,33 @@ const MAX_SENDS_PER_HOUR = 5; // codes sent, whoever asks
 const RESEND_KEY = /^re_[A-Za-z0-9_]{8,120}$/;
 const SENDER = /^([^\x00-\x1f<>"]{1,60} )?<?[^\s<>@"]+@[^\s<>@"]+\.[A-Za-z]{2,}>?$/;
 
-type Pending = { email: string; codeHash: string; expiresAt: number; attempts: number; resendApiKey: string; mailFrom: string };
+type Pending = {
+  email: string;
+  codeHash: string;
+  expiresAt: number;
+  attempts: number;
+  resendApiKey: string;
+  mailFrom: string;
+  /** Local development only: the code itself, so the page can show it. Never set on a real address. */
+  devCode?: string;
+};
+
+/**
+ * Every step is its own page (post, then redirect), so the browser's back button and the Back
+ * links work without "resubmit form?" warnings. The email typed in step 1 is remembered in a
+ * cookie for an hour; it is not secret and grants nothing.
+ */
+const DRAFT_COOKIE = "setup_email";
+const rememberEmail = (c: Context<AppEnv>, email: string) =>
+  setCookie(c, DRAFT_COOKIE, email, { path: "/setup", httpOnly: true, secure: c.env.APP_ORIGIN.startsWith("https://"), sameSite: "Lax", maxAge: 3600 });
+const draftEmail = (c: Context<AppEnv>) => normalizeEmail(getCookie(c, DRAFT_COOKIE));
+
+/** Messages picked by a fixed code in the URL, so nothing typed is ever echoed from it. */
+const MESSAGES: Record<string, string> = {
+  expired: "That code has expired. Ask for a new one.",
+  toomany: "Too many wrong codes. Start again for a new one.",
+  limit: "Too many codes were sent in the last hour. Try again later.",
+};
 
 const codeHash = (email: string, code: string) => sha256(`setup:${email}:${code}`);
 
@@ -60,12 +87,13 @@ const ownerOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
 const STEPS = ["Your email", "Connect email", "Confirm", "Your brand"] as const;
 
 /** The page frame for every setup step: a labelled progress bar over one card. */
-function stepPage(n: 1 | 2 | 3 | 4, title: string, body: unknown, opts: { wide?: boolean } = {}) {
+function stepPage(n: 1 | 2 | 3 | 4, title: string, body: unknown, opts: { wide?: boolean; back?: string } = {}) {
   return page({
     title,
     narrow: !opts.wide,
     bare: true,
     body: html`<div class="setup ${opts.wide ? "wide" : ""}">
+      ${opts.back ? html`<p class="crumbs setup-back"><a href="${opts.back}">← Back</a></p>` : ""}
       <div class="steps" role="progressbar" aria-valuemin="1" aria-valuemax="4" aria-valuenow="${n}" aria-label="Setup progress">
         ${STEPS.map((_, i) => html`<span class="${i < n ? "on" : ""}"></span>`)}
       </div>
@@ -95,13 +123,14 @@ function emailStep(error?: string, email = "") {
   );
 }
 
-setupRoutes.get("/setup", onlyWhileUnclaimed, (c) => c.html(emailStep()));
+setupRoutes.get("/setup", onlyWhileUnclaimed, (c) => c.html(emailStep(MESSAGES[c.req.query("m") ?? ""], draftEmail(c) ?? "")));
 
 setupRoutes.post("/setup/email", onlyWhileUnclaimed, async (c) => {
   const form = await c.req.parseBody();
   const email = normalizeEmail(form.email);
   if (!email) return c.html(emailStep("Enter a valid email address.", typeof form.email === "string" ? form.email.slice(0, 254) : ""), 400);
-  return c.html(keyStep(email));
+  rememberEmail(c, email);
+  return c.redirect("/setup/key", 303);
 });
 
 // ---------- Step 2: connect email (Resend) ----------
@@ -142,8 +171,15 @@ function keyStep(email: string, error?: string, mailFrom = "") {
         </form>
       </section>
       <p class="small center"><a href="/setup">Use a different email</a></p>`,
+    { back: "/setup" },
   );
 }
+
+setupRoutes.get("/setup/key", onlyWhileUnclaimed, (c) => {
+  const email = draftEmail(c);
+  if (!email) return c.redirect("/setup");
+  return c.html(keyStep(email, MESSAGES[c.req.query("m") ?? ""]));
+});
 
 /** Sends a fresh code with the given key, within the hourly limit. Returns the code, or an error to show. */
 async function sendCode(
@@ -152,6 +188,7 @@ async function sendCode(
   resendApiKey: string,
   mailFrom: string,
 ): Promise<{ code: string } | { error: string; status: 400 | 429 }> {
+  const local = env.ENVIRONMENT === "local" && isLocalOrigin(env.APP_ORIGIN);
   const hourAgo = Date.now() - 60 * 60 * 1000;
   const sends = ((await getSetting<number[]>(env, "setup_sends")) ?? []).filter((t) => t > hourAgo);
   if (sends.length >= MAX_SENDS_PER_HOUR) return { error: "Too many codes were sent in the last hour. Try again later.", status: 429 };
@@ -164,7 +201,15 @@ async function sendCode(
       status: 400,
     };
   }
-  const pending: Pending = { email, codeHash: await codeHash(email, code), expiresAt: Date.now() + CODE_TTL, attempts: 0, resendApiKey, mailFrom };
+  const pending: Pending = {
+    email,
+    codeHash: await codeHash(email, code),
+    expiresAt: Date.now() + CODE_TTL,
+    attempts: 0,
+    resendApiKey,
+    mailFrom,
+    ...(local ? { devCode: code } : {}),
+  };
   await putSetting(env, "setup_pending", pending);
   return { code };
 }
@@ -179,12 +224,11 @@ setupRoutes.post("/setup/start", onlyWhileUnclaimed, async (c) => {
   if (mailFrom && !SENDER.test(mailFrom)) return c.html(keyStep(email, "The sender should look like Data Room <rooms@yourdomain.com>.", mailFrom), 400);
   const sent = await sendCode(c.env, email, resendApiKey, mailFrom);
   if ("error" in sent) return c.html(keyStep(email, sent.error, mailFrom), sent.status);
-  return c.html(codeStep(email, undefined, devCode(c.env, sent.code)));
+  rememberEmail(c, email);
+  return c.redirect("/setup/code", 303);
 });
 
 // ---------- Step 3: confirm with the code ----------
-
-const devCode = (env: Env, code: string) => (env.ENVIRONMENT === "local" && isLocalOrigin(env.APP_ORIGIN) ? code : undefined);
 
 function codeStep(email: string, error?: string, dev?: string, info?: string) {
   return stepPage(
@@ -205,15 +249,26 @@ function codeStep(email: string, error?: string, dev?: string, info?: string) {
         <form method="post" action="/setup/resend" class="center"><button class="link-btn small" type="submit">Send a new code</button></form>
       </section>
       <p class="small center"><a href="/setup">Start again with a different email</a></p>`,
+    { back: "/setup/key" },
   );
 }
 
+setupRoutes.get("/setup/code", onlyWhileUnclaimed, async (c) => {
+  const pending = await getSetting<Pending>(c.env, "setup_pending");
+  if (!pending || pending.expiresAt < Date.now()) return c.redirect(draftEmail(c) ? "/setup/key?m=expired" : "/setup?m=expired");
+  const m = c.req.query("m");
+  const left = Math.max(1, Math.min(MAX_ATTEMPTS - 1, Number(c.req.query("left")) || 1));
+  const error = m === "wrong" ? `That code is not right. ${left} ${left === 1 ? "try" : "tries"} left.` : m === "limit" ? MESSAGES.limit : undefined;
+  const info = m === "new" ? "A new code is on its way. Use the newest email." : undefined;
+  return c.html(codeStep(pending.email, error, pending.devCode, info));
+});
+
 setupRoutes.post("/setup/resend", onlyWhileUnclaimed, async (c) => {
   const pending = await getSetting<Pending>(c.env, "setup_pending");
-  if (!pending) return c.html(emailStep("Enter your email again to get a new code."), 400);
+  if (!pending) return c.redirect("/setup?m=expired", 303);
   const sent = await sendCode(c.env, pending.email, pending.resendApiKey, pending.mailFrom);
-  if ("error" in sent) return c.html(codeStep(pending.email, sent.error), sent.status);
-  return c.html(codeStep(pending.email, undefined, devCode(c.env, sent.code), "A new code is on its way. Use the newest email."));
+  if ("error" in sent) return c.redirect(sent.status === 429 ? "/setup/code?m=limit" : "/setup/key", 303);
+  return c.redirect("/setup/code?m=new", 303);
 });
 
 setupRoutes.post("/setup/verify", onlyWhileUnclaimed, async (c) => {
@@ -222,16 +277,16 @@ setupRoutes.post("/setup/verify", onlyWhileUnclaimed, async (c) => {
   const pending = await getSetting<Pending>(c.env, "setup_pending");
   if (!pending || pending.expiresAt < Date.now()) {
     await deleteSetting(c.env, "setup_pending");
-    return c.html(emailStep("That code has expired. Enter your email again for a new one."), 400);
+    return c.redirect("/setup?m=expired", 303);
   }
   if (!/^\d{6}$/.test(code) || (await codeHash(pending.email, code)) !== pending.codeHash) {
     const attempts = pending.attempts + 1;
     if (attempts >= MAX_ATTEMPTS) {
       await deleteSetting(c.env, "setup_pending");
-      return c.html(emailStep("Too many wrong codes. Enter your email again for a new one.", pending.email), 400);
+      return c.redirect("/setup?m=toomany", 303);
     }
     await putSetting(c.env, "setup_pending", { ...pending, attempts });
-    return c.html(codeStep(pending.email, `That code is not right. ${MAX_ATTEMPTS - attempts} tries left.`), 400);
+    return c.redirect(`/setup/code?m=wrong&left=${MAX_ATTEMPTS - attempts}`, 303);
   }
 
   // The claim: written only if nobody claimed the room in the meantime.
@@ -380,6 +435,7 @@ setupRoutes.get("/setup/done", ownerOnly, async (c) => {
               : ""}
           </section>
           <p class="center"><a class="btn wide" href="/admin">Go to my data room</a></p>
+          <p class="small center"><a href="/setup/brand">← Change name, colours or logo</a></p>
         </div>`,
     }),
   );
