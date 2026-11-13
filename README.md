@@ -60,7 +60,7 @@ You need a free [GitHub](https://github.com) account, a free [Cloudflare](https:
 4. **Project name:** keep `openroom`, or any name that is not already a repository in that account.
 5. Leave the database and bucket names as they are.
 6. Fill in the only two fields that matter:
-   - **ADMIN_EMAILS**: the email you signed up to Resend with.
+   - **ADMIN_EMAILS**: the email you signed up to Resend with. The box hides what you type, like a password; that is normal.
    - **RESEND_API_KEY**: the key from step 1.
 7. Click **Deploy**. Cloudflare creates the database and the private file bucket, sets up the tables and puts the room online.
 8. Open the `https://openroom.<your-name>.workers.dev` address it shows, enter your email, and click the link in your inbox. Then go to **Branding** to add your name, logo and colours.
