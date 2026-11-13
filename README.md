@@ -11,6 +11,15 @@ Built for a real seed fundraise, then opened up.
   <img src="docs/investor-phone.jpg" alt="The same room on a phone" width="24%">
 </p>
 
+**Which way should I set it up?**
+
+| You have | Use | Time | Cost |
+|---|---|---|---|
+| Nothing yet, or a Cloudflare account | [Deploy to Cloudflare](#deploy-to-cloudflare-recommended) | 5 minutes, no command line | Free to try; $5 a month for heavy PDF stamping |
+| Your own server with Docker | [Run with Docker](#run-with-docker) | 15 minutes | Your server |
+
+Using an AI coding agent to set it up? Point it at [AGENTS.md](AGENTS.md).
+
 ## What it does
 
 **For investors**
@@ -125,6 +134,54 @@ The defaults, used for anything left blank on the Branding tab, come from these 
 | `BRAND_FONT_BODY`, `BRAND_FONT_DISPLAY` | Any Google Font name |
 | `SHOW_CREDIT` | `"false"` hides the small "Powered by Openroom" line |
 
+## All settings
+
+Every setting, in one place. On Cloudflare, plain settings live in `wrangler.jsonc` → `vars` (or the dashboard, **Settings → Variables and Secrets**) and secrets are set with `npx wrangler secret put NAME`. With Docker, everything is an environment variable (`.env`).
+
+| Setting | Needed? | Where | What it is |
+|---|---|---|---|
+| `ADMIN_EMAILS` | Yes | Both (secret) | Who manages the room, comma separated. |
+| `APP_ORIGIN` | Docker: yes. Cloudflare: only with a custom domain | Both | The room's address, like `https://dataroom.acme.com`. No path, no trailing slash. |
+| `MAIL_FROM` | Yes | Both | Sender of sign-in emails, like `Data Room <rooms@acme.com>`. Must be allowed by your email provider. |
+| `RESEND_API_KEY` | One email option | Both (secret) | A [Resend](https://resend.com) API key. |
+| `SMTP_URL` | One email option | Docker only | `smtp://user:password@host:587` or `smtps://user:password@host:465`. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | One email option | Both (secret) | Amazon SES keys (an IAM user allowed only `ses:SendEmail`). |
+| `SES_REGION` | With SES | Both | Region where the SES sender is verified. Default `us-east-1`. |
+| `MAIL_PROVIDER` | No | Both | Force `resend`, `smtp` or `ses`. Otherwise the first one with its keys set is used, in that order. |
+| `BRAND_NAME`, `BRAND_LEGAL_NAME`, `BRAND_INVITER`, `BRAND_COLOR`, `BRAND_DARK`, `BRAND_FONT_BODY`, `BRAND_FONT_DISPLAY` | No | Both | Default branding (see [Make it yours](#make-it-yours)). The Branding tab overrides them. |
+| `SHOW_CREDIT` | No | Both | `"false"` hides "Powered by Openroom". |
+| `ENVIRONMENT` | No | Both | `production` (default). `local` only for development: on a local address it shows sign-in links on the page instead of emailing them. |
+| `DOMAIN` | Yes with compose | Docker (`docker-compose.yml`) | Your domain without `https://`. Compose builds `APP_ORIGIN` from it. |
+| `DATA_DIR` | No | Docker only | Where the database and files are kept. Default `/data` (the `openroom-data` volume). |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | No | Docker only | Keep files in an S3-compatible bucket instead of `DATA_DIR`. All five, or none. |
+| `TRUST_PROXY` | No | Docker only | `true` when a proxy you control is the only way in (compose sets it). |
+| `PORT` | No | Docker only | Port inside the container. Default `3000`. |
+
+## Updating
+
+- **Cloudflare (button):** your copy on GitHub is yours. To get new Openroom versions, open it on GitHub and click **Sync fork** (or merge from `plato15/openroom`). Cloudflare redeploys and applies database changes by itself.
+- **Cloudflare (command line):** `git pull && npm install && npm run deploy`.
+- **Docker:** `docker compose pull && docker compose up -d`. Database changes apply when the container starts.
+
+Read [CHANGELOG.md](CHANGELOG.md) first: anything you need to do by hand is listed there.
+
+## Backups
+
+- **Cloudflare:** D1 keeps 30 days of history you can restore with [Time Travel](https://developers.cloudflare.com/d1/reference/time-travel/) (`npx wrangler d1 time-travel restore DB --timestamp=...`). R2 has no automatic backup; copy the bucket with `rclone` or a second bucket if you need one.
+- **Docker:** back up the `openroom-data` volume (or `DATA_DIR`). It holds the database (`openroom.db`) and every document (`files/`). For a consistent copy, stop the container first or use `sqlite3 openroom.db ".backup backup.db"`.
+
+## Troubleshooting
+
+| Problem | What to check |
+|---|---|
+| The sign-in email never arrives | Check spam. With Resend's `onboarding@resend.dev` sender, mail only reaches the email you signed up to Resend with: verify your domain and change `MAIL_FROM`. Then look at the logs (Cloudflare: **Workers → openroom → Logs**; Docker: `docker compose logs openroom`) for a line starting `mail not sent`. |
+| "Check your email" shows but I am not an admin | Your address must be in `ADMIN_EMAILS` exactly (comma separated, no quotes). Investors must be added on the Investors tab first; anyone else gets the same page but no email, on purpose. |
+| `Forbidden` after submitting a form | `APP_ORIGIN` does not match the address in your browser. Fix it, or on Cloudflare leave it empty. |
+| Docker: "Openroom cannot start" | The line after it says which setting is missing or wrong. |
+| Docker: Caddy cannot get a certificate | The domain's DNS must point at the server, and ports 80 and 443 must be open. |
+| Cloudflare: a big PDF does not open (error 1102 or "exceeded CPU") | You are on the free Workers plan. Move to Workers Paid ($5 a month). |
+| The Branding change does not show | Reload the page. Other Cloudflare locations pick it up within 10 seconds. |
+
 ## What opens in the browser
 
 | File | Investors see |
@@ -180,7 +237,17 @@ The suite runs twice: once in the real Workers runtime (Miniflare) and once agai
 
 ## Contributing
 
-Issues and pull requests are welcome. Please run `npm run typecheck` and `npm test` before opening a pull request, and keep the security rule in one place (`src/access.ts`). Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
+Yes, please. Openroom is MIT licensed and contributions of any size are welcome: bug reports, ideas, docs, translations and code.
+
+- **Found a bug or want a feature?** [Open an issue](https://github.com/plato15/openroom/issues/new/choose).
+- **Want to send code?** Read [CONTRIBUTING.md](CONTRIBUTING.md): how to run it locally, the rules that keep investors' documents safe, and what a good pull request looks like.
+- **Found a security problem?** Do not open an issue; report it privately as described in [SECURITY.md](SECURITY.md).
+
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md).
+
+## Releases
+
+Openroom uses [semantic versioning](https://semver.org). Every release is a tag like `v0.2.0`, a [GitHub release](https://github.com/plato15/openroom/releases) with notes from [CHANGELOG.md](CHANGELOG.md), and a Docker image `ghcr.io/plato15/openroom:0.2.0` (plus `:0.2` and `:latest`). How releases are made: [RELEASING.md](RELEASING.md).
 
 ## Licence
 

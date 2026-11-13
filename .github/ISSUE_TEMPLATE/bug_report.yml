@@ -1,0 +1,38 @@
+name: Bug report
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Security problem? Do not use this form: see SECURITY.md to report it privately."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see it
+      placeholder: "1. Sign in as admin\n2. Upload a .xlsx file\n3. ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: setup
+    attributes:
+      label: How you run Openroom
+      options: [Cloudflare (Deploy button), Cloudflare (command line), Docker, Local development]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release (like 0.2.0) or commit you are on.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Remove email addresses, keys and document names you do not want public.
