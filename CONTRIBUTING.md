@@ -16,7 +16,7 @@ You need Node 22.12 or newer (`.nvmrc` says which one CI uses).
 ```bash
 git clone https://github.com/<you>/openroom.git && cd openroom
 npm install
-cp .dev.vars.example .dev.vars       # put your email in ADMIN_EMAILS
+cp .dev.vars.example .dev.vars       # put your email after ADMIN_EMAILS=
 npm run db:migrate:local
 npm run dev                          # http://localhost:8799
 ```

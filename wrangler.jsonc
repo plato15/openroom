@@ -18,28 +18,19 @@
   "assets": { "directory": "./public", "binding": "ASSETS" },
   "d1_databases": [{ "binding": "DB", "database_name": "openroom", "migrations_dir": "migrations" }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "openroom-files" }],
-  "vars": {
-    "ENVIRONMENT": "production",
-    // Leave empty to use the address the room is opened on (your workers.dev address).
-    // Set it when you add a custom domain, for example https://dataroom.example.com
-    "APP_ORIGIN": "",
-    // The sender of sign-in emails. onboarding@resend.dev works straight away, but Resend only
-    // delivers it to the email you signed up to Resend with. Verify your own domain in Resend to
-    // email investors, then change this to an address on it.
-    "MAIL_FROM": "Data Room <onboarding@resend.dev>",
-    // Only for Amazon SES: the region where the sender is verified.
-    "SES_REGION": "us-east-1",
-    // Default branding. Admins can change all of this on the Branding tab without a redeploy.
-    "BRAND_NAME": "Openroom",
-    "BRAND_LEGAL_NAME": "Openroom",
-    "BRAND_INVITER": "The Openroom team",
-    "BRAND_COLOR": "#2563EB",
-    "BRAND_DARK": "#0F172A",
-    "BRAND_FONT_BODY": "Inter",
-    "BRAND_FONT_DISPLAY": "Inter",
-    "SHOW_CREDIT": "true"
-  },
-  // Secrets (listed in .dev.vars.example; set with `npx wrangler secret put NAME`):
+  // No settings here on purpose: the Deploy to Cloudflare form only asks for what it must
+  // (ADMIN_EMAILS and RESEND_API_KEY, from .dev.vars.example). Everything else has a sensible
+  // default in the code, and branding is set in the app on the Branding tab.
+  //
+  // Optional settings, added later in the Cloudflare dashboard (Workers & Pages > openroom >
+  // Settings > Variables and Secrets), all listed in the README under "All settings":
+  //   MAIL_FROM   sender of sign-in emails, once your domain is verified in Resend
+  //   APP_ORIGIN  only when you add a custom domain, e.g. https://dataroom.example.com
+  //   BRAND_*, SHOW_CREDIT, SES_REGION, MAIL_PROVIDER
+  //
+  // keep_vars: settings added in the dashboard survive every later deploy.
+  "keep_vars": true,
+  // Secrets (set with `npx wrangler secret put NAME` or in the dashboard):
   //   ADMIN_EMAILS, RESEND_API_KEY, or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY for SES.
   "observability": { "enabled": true }
 }

@@ -2,9 +2,12 @@ export type Env = {
   DB: D1Database;
   FILES: R2Bucket;
   ASSETS: Fetcher;
-  ENVIRONMENT: "production" | "local" | "test";
+  /** Left out means production. "local" and "test" only ever take effect on a local address. */
+  ENVIRONMENT?: "production" | "local" | "test";
+  /** Left out on Cloudflare: the address the room was opened on is used (see src/index.ts). */
   APP_ORIGIN: string;
-  MAIL_FROM: string;
+  /** Left out: DEFAULT_MAIL_FROM in src/email.ts. */
+  MAIL_FROM?: string;
   /** Optional: "resend", "smtp" or "ses". Left out, the first provider with its keys set is used. */
   MAIL_PROVIDER?: string;
   RESEND_API_KEY?: string;

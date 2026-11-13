@@ -52,21 +52,26 @@ The same code also runs on Node for people who prefer their own server: the Dock
 
 About five minutes, no command line.
 
-1. Make a free account at [resend.com](https://resend.com) and create an **API key**. This sends the sign-in emails.
-2. Click **Deploy to Cloudflare** above and sign in to Cloudflare (a free account works).
-3. Fill in the form:
-   - **ADMIN_EMAILS**: your email. Add more, separated by commas, for anyone else who manages the room.
+You need a free [GitHub](https://github.com) account, a free [Cloudflare](https://dash.cloudflare.com/sign-up) account and a free [Resend](https://resend.com) account (it sends the sign-in emails).
+
+1. In Resend, open **API Keys** and create a key. Copy it.
+2. Click **Deploy to Cloudflare** above and sign in to Cloudflare.
+3. **Git account:** choose your personal GitHub account. Cloudflare makes your own private copy of Openroom there; that is how your room gets updates later. It only gets access to that one new repository.
+4. **Project name:** keep `openroom`, or any name that is not already a repository in that account.
+5. Leave the database and bucket names as they are.
+6. Fill in the only two fields that matter:
+   - **ADMIN_EMAILS**: the email you signed up to Resend with.
    - **RESEND_API_KEY**: the key from step 1.
-   - **APP_ORIGIN**: leave it empty. The room uses the free `https://openroom.<your-name>.workers.dev` address Cloudflare gives it.
-   - **MAIL_FROM**: leave it as it is for now (see "Email" below before inviting investors).
-4. Click **Create and deploy**. Cloudflare copies Openroom to your GitHub account, creates the database and the private file bucket, sets up the tables and puts the room online.
-5. Open the address it shows, enter your email, and click the link in your inbox. Then go to **Branding** to add your name, logo and colours.
+7. Click **Deploy**. Cloudflare creates the database and the private file bucket, sets up the tables and puts the room online.
+8. Open the `https://openroom.<your-name>.workers.dev` address it shows, enter your email, and click the link in your inbox. Then go to **Branding** to add your name, logo and colours.
+
+If Cloudflare says it **could not create the Git repository**: a repository with that project name already exists, or you picked a GitHub organisation that has not allowed Cloudflare to create repositories. Pick your personal account or another project name.
 
 From then on, every push to your copy on GitHub redeploys the room and applies any new database changes.
 
-**Email.** Until you verify a domain, Resend only delivers to the email you signed up with, which is enough to sign in as admin. To email investors, add your domain in Resend (**Domains**, then the DNS records it shows), then set `MAIL_FROM` to an address on it, like `Data Room <rooms@acme.com>`, in the Cloudflare dashboard under **Workers & Pages → openroom → Settings → Variables and Secrets**. Prefer Amazon SES? Add the secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (an IAM user allowed only `ses:SendEmail`), set `SES_REGION`, and leave `RESEND_API_KEY` empty.
+**Email.** Until you verify a domain, Resend only delivers to the email you signed up with, which is enough to sign in as admin. To email investors, add your domain in Resend (**Domains**, then the DNS records it shows), then add a variable `MAIL_FROM` with an address on it, like `Data Room <rooms@acme.com>`, in the Cloudflare dashboard under **Workers & Pages → openroom → Settings → Variables and Secrets**. Settings added there stay through every later update. Prefer Amazon SES? Add the secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (an IAM user allowed only `ses:SendEmail`), set `SES_REGION`, and leave `RESEND_API_KEY` empty.
 
-**Your own domain (optional).** In the dashboard, **Workers & Pages → openroom → Settings → Domains & Routes → Add → Custom domain**, enter for example `dataroom.acme.com` (the domain must be on your Cloudflare account), then set the variable `APP_ORIGIN` to `https://dataroom.acme.com`. Sign-in links then always use that address.
+**Your own domain (optional).** In the dashboard, **Workers & Pages → openroom → Settings → Domains & Routes → Add → Custom domain**, enter for example `dataroom.acme.com` (the domain must be on your Cloudflare account), then add the variable `APP_ORIGIN` with `https://dataroom.acme.com` (same place as `MAIL_FROM` above). Sign-in links then always use that address.
 
 **Plan.** The free Workers plan runs the room. Stamping a long PDF can use more CPU time than the free plan allows per request, so for a real fundraise use **Workers Paid** ($5 a month).
 
@@ -123,7 +128,7 @@ Set `TRUST_PROXY=true` only when your proxy is the sole way in, so visitor addre
 
 Admins change the look on the **Branding** tab: company name, legal name, who invites, main and header colours, fonts (any [Google Font](https://fonts.google.com)), and three logos (header, email, browser tab). It takes effect straight away, with no redeploy. Logos are PNG, JPEG, WebP or SVG up to 512 KB; email logos must be PNG or JPEG, since email apps do not show SVG.
 
-The defaults, used for anything left blank on the Branding tab, come from these settings (`wrangler.jsonc` → `vars`, or environment variables for Docker):
+You do not need any of the settings below. If you would rather set the defaults outside the app (used for anything left blank on the Branding tab), add them as variables in the Cloudflare dashboard, or as environment variables for Docker:
 
 | Setting | What it changes |
 |---|---|
@@ -136,13 +141,13 @@ The defaults, used for anything left blank on the Branding tab, come from these 
 
 ## All settings
 
-Every setting, in one place. On Cloudflare, plain settings live in `wrangler.jsonc` → `vars` (or the dashboard, **Settings → Variables and Secrets**) and secrets are set with `npx wrangler secret put NAME`. With Docker, everything is an environment variable (`.env`).
+Every setting, in one place. Only the ones marked **Yes** are needed; everything else has a default. On Cloudflare, add them in the dashboard (**Workers & Pages → openroom → Settings → Variables and Secrets**; they stay through updates) or with `npx wrangler secret put NAME`. With Docker, everything is an environment variable (`.env`).
 
 | Setting | Needed? | Where | What it is |
 |---|---|---|---|
 | `ADMIN_EMAILS` | Yes | Both (secret) | Who manages the room, comma separated. |
 | `APP_ORIGIN` | Docker: yes. Cloudflare: only with a custom domain | Both | The room's address, like `https://dataroom.acme.com`. No path, no trailing slash. |
-| `MAIL_FROM` | Yes | Both | Sender of sign-in emails, like `Data Room <rooms@acme.com>`. Must be allowed by your email provider. |
+| `MAIL_FROM` | Docker: yes. Cloudflare: once your domain is verified | Both | Sender of sign-in emails, like `Data Room <rooms@acme.com>`. Must be allowed by your email provider. Default `Data Room <onboarding@resend.dev>`, which only reaches the Resend account owner. |
 | `RESEND_API_KEY` | One email option | Both (secret) | A [Resend](https://resend.com) API key. |
 | `SMTP_URL` | One email option | Docker only | `smtp://user:password@host:587` or `smtps://user:password@host:465`. |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | One email option | Both (secret) | Amazon SES keys (an IAM user allowed only `ses:SendEmail`). |

@@ -5,6 +5,14 @@ import { isLocalOrigin } from "./util";
 
 export type Mail = { to: string; subject: string; text: string; html: string; link?: string };
 
+/**
+ * Resend's shared test sender: works with any Resend key, but only delivers to the email the
+ * Resend account was made with. Enough for the admin's first sign-in; set MAIL_FROM to an
+ * address on a verified domain to email investors.
+ */
+export const DEFAULT_MAIL_FROM = "Data Room <onboarding@resend.dev>";
+const mailFrom = (env: Env) => env.MAIL_FROM?.trim() || DEFAULT_MAIL_FROM;
+
 /** Mail captured in tests and local dev instead of being sent. */
 export const outbox: Mail[] = [];
 
@@ -55,7 +63,7 @@ async function sendResend(env: Env, mail: Mail): Promise<boolean> {
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ from: env.MAIL_FROM, to: [mail.to], subject: mail.subject, text: mail.text, html: mail.html }),
+    body: JSON.stringify({ from: mailFrom(env), to: [mail.to], subject: mail.subject, text: mail.text, html: mail.html }),
   });
   if (!res.ok) {
     console.error(`mail not sent: Resend ${res.status} ${(await res.text()).slice(0, 300)}`);
@@ -66,7 +74,7 @@ async function sendResend(env: Env, mail: Mail): Promise<boolean> {
 
 async function sendSmtp(env: Env, mail: Mail): Promise<boolean> {
   if (!smtpSender || !env.SMTP_URL) throw new Error("SMTP is only available in the Docker build, with SMTP_URL set");
-  await smtpSender(env.MAIL_FROM, mail);
+  await smtpSender(mailFrom(env), mail);
   return true;
 }
 
@@ -83,7 +91,7 @@ async function sendSes(env: Env, mail: Mail): Promise<boolean> {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      FromEmailAddress: env.MAIL_FROM,
+      FromEmailAddress: mailFrom(env),
       Destination: { ToAddresses: [mail.to] },
       Content: {
         Simple: {

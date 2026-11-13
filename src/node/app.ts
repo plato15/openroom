@@ -32,7 +32,6 @@ export function createEnv(opts: { settings: NodeSettings; db: SqliteD1; bucket: 
   const vars: Record<string, string> = {};
   for (const k of PASS_THROUGH) if (opts.settings[k] !== undefined) vars[k] = opts.settings[k]!;
   vars.ENVIRONMENT ||= "production";
-  vars.MAIL_FROM ||= "Data Room <noreply@example.com>";
   return {
     ...(vars as unknown as Env),
     DB: opts.db as unknown as D1Database,
