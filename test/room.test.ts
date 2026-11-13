@@ -212,7 +212,8 @@ describe("investor access", () => {
     for (const p of [`/room`, `/d/${file}`, `/d/${file}/view`, `/d/${file}/download`]) {
       const res = await req(p);
       expect(res.status).toBe(302);
-      expect(res.headers.get("location")).toBe("/");
+      // A document page remembers where you were going; nothing else does.
+      expect(res.headers.get("location")).toBe(p === `/d/${file}` ? `/?next=${encodeURIComponent(p)}` : "/");
     }
   });
 
@@ -743,5 +744,334 @@ describe("blank APP_ORIGIN (Cloudflare one-click deploys)", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("strict-transport-security")).toBeTruthy();
     expect((await post(`${own}/login`, "https://evil.example")).status).toBe(403);
+  });
+});
+
+describe("first-time setup", () => {
+  const ctx = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as ExecutionContext;
+  /** The same room with no ADMIN_EMAILS: a brand new deployment from the Deploy button. */
+  const fresh = (path: string, opts: Opts = {}) => {
+    const headers = new Headers();
+    if (opts.cookie) headers.set("cookie", opts.cookie);
+    const method = opts.method ?? (opts.form ? "POST" : "GET");
+    if (method !== "GET") headers.set("origin", ORIGIN);
+    let body: BodyInit | undefined;
+    if (opts.form instanceof FormData) body = opts.form;
+    else if (opts.form) body = new URLSearchParams(opts.form as Record<string, string>);
+    return app.fetch(new Request(ORIGIN + path, { method, headers, body, redirect: "manual" }), { ...env, ADMIN_EMAILS: "" }, ctx);
+  };
+  const FOUNDER = "founder@startup.test";
+  const KEY = "re_test_1234567890abcdef";
+  const codeFor = async (email: string) => {
+    const mails = (await (await req("/__test/outbox")).json()) as { to: string; subject: string }[];
+    return mails.filter((m) => m.to === email && m.subject.startsWith("Your setup code")).pop()?.subject.match(/\d{6}/)?.[0];
+  };
+
+  it("never shows on a room deployed with ADMIN_EMAILS", async () => {
+    expect((await req("/setup")).headers.get("location")).toBe("/");
+    const res = await req("/setup/start", { form: { email: "attacker@evil.test", resendApiKey: KEY } });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/");
+    expect(await codeFor("attacker@evil.test")).toBeUndefined();
+  });
+
+  it("sends a brand new room to setup, and checks the email and key", async () => {
+    expect((await fresh("/")).headers.get("location")).toBe("/setup");
+    expect((await fresh("/admin")).headers.get("location")).toBe("/setup");
+    expect((await fresh("/login", { form: { email: FOUNDER } })).status).toBe(404);
+    expect((await fresh("/theme.css")).status).toBe(200);
+    expect(await (await fresh("/setup")).text()).toContain("Set up your data room");
+    // Step 1 checks the email, remembers it, and moves on to the Resend step; Back returns with it filled in.
+    expect((await fresh("/setup/email", { form: { email: "nope" } })).status).toBe(400);
+    expect((await fresh("/setup/key")).headers.get("location")).toBe("/setup");
+    const step1 = await fresh("/setup/email", { form: { email: FOUNDER } });
+    expect(step1.headers.get("location")).toBe("/setup/key");
+    const draft = step1.headers.get("set-cookie")!.split(";")[0];
+    const step2 = await (await fresh("/setup/key", { cookie: draft })).text();
+    expect(step2).toContain("Connect email sending");
+    expect(step2).toContain(FOUNDER);
+    expect(step2).toContain('href="/setup">← Back');
+    expect(await (await fresh("/setup", { cookie: draft })).text()).toContain(`value="${FOUNDER}"`);
+    expect((await fresh("/setup/code")).headers.get("location")).toBe("/setup?m=expired");
+    expect((await fresh("/setup/start", { form: { email: "nope", resendApiKey: KEY } })).status).toBe(400);
+    expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: "not-a-resend-key" } })).status).toBe(400);
+    expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY, mailFrom: "x\r\nBcc: a@b.c" } })).status).toBe(400);
+    expect((await fresh("/setup/brand")).headers.get("location")).toBe("/"); // and "/" leads to /setup
+  });
+
+  it("throws a code away after five wrong tries", async () => {
+    const start = await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY } });
+    expect(start.headers.get("location")).toBe("/setup/code");
+    expect(await (await fresh("/setup/code")).text()).toContain('href="/setup/key">← Back');
+    const code = await codeFor(FOUNDER);
+    expect(code).toMatch(/^\d{6}$/);
+    const wrong = code === "000000" ? "111111" : "000000";
+    for (let i = 1; i <= 4; i++) {
+      const res = await fresh("/setup/verify", { form: { code: wrong } });
+      expect(res.headers.get("location")).toBe(`/setup/code?m=wrong&left=${5 - i}`);
+    }
+    expect(await (await fresh("/setup/code?m=wrong&left=2")).text()).toContain("2 tries left");
+    expect((await fresh("/setup/verify", { form: { code: wrong } })).headers.get("location")).toBe("/setup?m=toomany");
+    expect((await fresh("/setup/resend", { form: {} })).headers.get("location")).toBe("/setup?m=expired"); // nothing pending any more
+    const late = await fresh("/setup/verify", { form: { code: code! } });
+    expect(late.headers.get("location")).toBe("/setup?m=expired");
+    expect(late.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("makes the first verified visitor the owner, exactly once", async () => {
+    await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY } });
+    const first = await codeFor(FOUNDER);
+    // "Send a new code": the newest code works, the previous one does not.
+    expect((await fresh("/setup/resend", { form: {} })).headers.get("location")).toBe("/setup/code?m=new");
+    expect(await (await fresh("/setup/code?m=new")).text()).toContain("A new code is on its way");
+    const second = await codeFor(FOUNDER);
+    if (first !== second) expect((await fresh("/setup/verify", { form: { code: first! } })).headers.get("location")).toContain("m=wrong");
+    const res = await fresh("/setup/verify", { form: { code: second! } });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/setup/room");
+    const cookie = res.headers.get("set-cookie")!.split(";")[0];
+
+    // Step 4: the template choice. This shared test room already has folders, so nothing is added twice.
+    expect(await (await fresh("/setup/room", { cookie })).text()).toContain("Investor data room");
+    const before = (await env.DB.prepare("SELECT COUNT(*) AS n FROM folders").first<{ n: number }>())!.n;
+    expect((await fresh("/setup/room", { cookie, form: { template: "investor" } })).headers.get("location")).toBe("/setup/brand");
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM folders").first<{ n: number }>())!.n).toBe(before);
+
+    // Step 2 and 3.
+    expect((await fresh("/setup/brand", { cookie })).status).toBe(200);
+    expect((await fresh("/setup/brand", { cookie, form: { name: "<b>x</b>" } })).status).toBe(400);
+    const fd = new FormData();
+    fd.append("name", "Founder Co");
+    fd.append("color", "#0e9f6e");
+    fd.append("dark", "#1b2a41");
+    expect((await fresh("/setup/brand", { cookie, form: fd })).headers.get("location")).toBe("/setup/done");
+    expect(await (await fresh("/setup/done", { cookie })).text()).toContain("The Founder Co data room is ready");
+    expect((await fresh("/admin", { cookie })).status).toBe(200);
+    expect(await (await fresh("/")).text()).toContain("Founder Co data room");
+
+    // The key is saved for sign-in emails; nobody else can claim the room now.
+    const mail = await env.DB.prepare("SELECT value FROM settings WHERE key = 'mail'").first<{ value: string }>();
+    expect(JSON.parse(mail!.value).resendApiKey).toBe(KEY);
+    expect((await fresh("/setup")).headers.get("location")).toBe("/");
+    const again = await fresh("/setup/start", { form: { email: "late@evil.test", resendApiKey: KEY } });
+    expect(again.headers.get("location")).toBe("/");
+    expect(await codeFor("late@evil.test")).toBeUndefined();
+
+    // The owner signs in later like any admin.
+    await fresh("/login", { form: { email: FOUNDER } });
+    const mails = (await (await req("/__test/outbox")).json()) as { to: string; link?: string }[];
+    expect(mails.some((m) => m.to === FOUNDER && m.link)).toBe(true);
+
+    // Leave the shared room's branding as the other tests expect it.
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'brand'").run();
+  });
+});
+
+describe("subfolders, templates and placeholders", () => {
+  async function addSubfolder(parent: string) {
+    const id = uid("sub");
+    await env.DB.prepare("INSERT INTO folders (id, name, description, position, watermark, created_at, parent_id) VALUES (?, ?, '', 0, 1, ?, ?)")
+      .bind(id, `Sub ${id}`, Date.now(), parent)
+      .run();
+    return id;
+  }
+
+  it("shows a subfolder's files only through the grant on its top folder", async () => {
+    const top = await addFolder();
+    const sub = await addSubfolder(top);
+    const other = await addSubfolder(await addFolder());
+    const inSub = await addFile(sub, { name: "In sub.pdf" });
+    const elsewhere = await addFile(other, { name: "Elsewhere.pdf" });
+    const inv = await addInvestor({ folders: [top] });
+    const cookie = await signIn(inv.email);
+    const room = await (await req("/room", { cookie })).text();
+    expect(room).toContain("In sub.pdf");
+    expect(room).not.toContain("Elsewhere.pdf");
+    expect((await req(`/d/${inSub}`, { cookie })).status).toBe(200);
+    expect((await req(`/d/${elsewhere}`, { cookie })).status).toBe(404);
+    expect((await req(`/d/${elsewhere}/view`, { cookie })).status).toBe(404);
+  });
+
+  it("never lets access be granted on a subfolder directly", async () => {
+    const admin = await adminSession();
+    const sub = await addSubfolder(await addFolder());
+    const email = `${uid("direct")}@fund.test`.toLowerCase();
+    await req("/admin/investors", { cookie: admin, form: { email, name: "Direct", folders: [sub] } });
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM grants g JOIN investors i ON i.id = g.investor_id WHERE i.email = ?").bind(email).first<{ n: number }>();
+    expect(row!.n).toBe(0);
+  });
+
+  it("keeps placeholders hidden until replaced, then shows the real document", async () => {
+    const admin = await adminSession();
+    const top = await addFolder();
+    const sub = await addSubfolder(top);
+    const ph = await addFile(sub, { name: "Pitch deck.pdf", published: false });
+    await env.DB.prepare("UPDATE files SET placeholder = 1 WHERE id = ?").bind(ph).run();
+    const inv = await addInvestor({ folders: [top] });
+    const cookie = await signIn(inv.email);
+
+    // Cannot be made visible as it is; even if a row were marked published, it is not served.
+    const pub = await req(`/admin/files/${ph}`, { cookie: admin, form: { action: "publish" } });
+    expect(pub.headers.get("location")).toContain("m=placeholder_publish");
+    await env.DB.prepare("UPDATE files SET published = 1 WHERE id = ?").bind(ph).run();
+    expect((await req(`/d/${ph}`, { cookie })).status).toBe(404);
+    expect(await (await req("/room", { cookie })).text()).not.toContain("Pitch deck.pdf");
+    await env.DB.prepare("UPDATE files SET published = 0 WHERE id = ?").bind(ph).run();
+
+    // Upload your version: same place and name, now real and visible.
+    const fd = new FormData();
+    fd.append("file", new File([await makePdf("our real deck")], "deck-final.pdf"));
+    const res = await req(`/admin/files/${ph}/replace`, { cookie: admin, form: fd });
+    expect(res.headers.get("location")).toContain("m=replaced_placeholder");
+    const row = await env.DB.prepare("SELECT name, published, placeholder FROM files WHERE id = ?").bind(ph).first();
+    expect(row).toEqual({ name: "Pitch deck.pdf", published: 1, placeholder: 0 });
+    expect((await req(`/d/${ph}`, { cookie })).status).toBe(200);
+  });
+
+  it("asks before deleting a folder, then deletes it with everything in it", async () => {
+    const admin = await adminSession();
+    const top = await addFolder();
+    const sub = await addSubfolder(top);
+    const inTop = await addFile(top, { name: "Top.pdf" });
+    const inSub = await addFile(sub, { name: "Sub.pdf", published: false });
+    const inv = await addInvestor({ folders: [top] });
+
+    // Without the confirmation step nothing happens: it goes to the "Are you sure?" page.
+    const blind = await req(`/admin/folders/${top}/delete`, { cookie: admin, form: {} });
+    expect(blind.headers.get("location")).toBe(`/admin/folders/${top}/delete`);
+    const ask = await (await req(`/admin/folders/${top}/delete`, { cookie: admin })).text();
+    expect(ask).toContain("1 subfolder");
+    expect(ask).toContain("2 documents (1 visible to investors)");
+    expect(ask).toContain("access for 1 investor");
+    expect(ask).toContain("This cannot be undone");
+    expect(await env.DB.prepare("SELECT 1 FROM folders WHERE id = ?").bind(top).first()).toBeTruthy();
+
+    // Investors can do neither.
+    const invCookie = await signIn(inv.email);
+    expect((await req(`/admin/folders/${top}/delete`, { cookie: invCookie, form: { confirm: "delete" } })).status).toBe(404);
+
+    const res = await req(`/admin/folders/${top}/delete`, { cookie: admin, form: { confirm: "delete" } });
+    expect(res.headers.get("location")).toContain("m=folder_deleted");
+    const left = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM folders WHERE id IN (?1, ?2)) + (SELECT COUNT(*) FROM files WHERE id IN (?3, ?4))
+            + (SELECT COUNT(*) FROM grants WHERE folder_id = ?1) AS n`,
+    )
+      .bind(top, sub, inTop, inSub)
+      .first<{ n: number }>();
+    expect(left!.n).toBe(0);
+    expect(await env.FILES.get(`files/${inTop}`)).toBeNull();
+    expect(await env.FILES.get(`files/${inSub}`)).toBeNull();
+    expect((await req(`/d/${inTop}`, { cookie: invCookie })).status).toBe(404);
+  });
+
+  it("adds a template's folders, subfolders and valid hidden placeholders", async () => {
+    const admin = await adminSession();
+    const count = async (sql: string) => (await env.DB.prepare(sql).first<{ n: number }>())!.n;
+    const [folders, placeholders] = [await count("SELECT COUNT(*) AS n FROM folders"), await count("SELECT COUNT(*) AS n FROM files WHERE placeholder = 1")];
+    expect((await req("/admin/templates", { cookie: admin })).status).toBe(200);
+    const res = await req("/admin/templates", { cookie: admin, form: { template: "board" } });
+    expect(res.headers.get("location")).toContain("m=template_added");
+    // Board portal: 5 sections with 10 items between them.
+    expect(await count("SELECT COUNT(*) AS n FROM folders")).toBe(folders + 15);
+    expect(await count("SELECT COUNT(*) AS n FROM files WHERE placeholder = 1")).toBe(placeholders + 10);
+    expect(await count("SELECT COUNT(*) AS n FROM files WHERE placeholder = 1 AND published = 1")).toBe(0);
+    const top = await env.DB.prepare("SELECT id FROM folders WHERE name = '1. Board meetings' AND parent_id IS NULL ORDER BY created_at DESC").first<{ id: string }>();
+    expect(top).toBeTruthy();
+    const sub = await env.DB.prepare("SELECT id FROM folders WHERE parent_id = ? AND name = 'Next meeting pack'").bind(top!.id).first<{ id: string }>();
+    const ph = await env.DB.prepare("SELECT r2_key FROM files WHERE folder_id = ?").bind(sub!.id).first<{ r2_key: string }>();
+    const pdf = await PDFDocument.load(await (await env.FILES.get(ph!.r2_key))!.arrayBuffer());
+    expect(pdf.getPageCount()).toBe(1);
+
+    // An investor given the new folder sees nothing yet: every page is a placeholder.
+    const inv = await addInvestor({ folders: [top!.id] });
+    const room = await (await req("/room", { cookie: await signIn(inv.email) })).text();
+    expect(room).not.toContain("Next meeting pack");
+    expect(room).toContain("No documents here yet");
+
+    // Admins only: an investor is sent away and nothing is added.
+    const total = await count("SELECT COUNT(*) AS n FROM folders");
+    const denied = await req("/admin/templates", { cookie: await signIn(inv.email), form: { template: "board" } });
+    expect(denied.headers.get("location")).toBe("/");
+    expect(await count("SELECT COUNT(*) AS n FROM folders")).toBe(total);
+  });
+});
+
+describe("short links", () => {
+  async function setLink(cookie: string, kind: "file" | "folder", id: string, slug: string) {
+    return kind === "file"
+      ? req(`/admin/files/${id}`, { cookie, form: { action: "slug", slug } })
+      : req(`/admin/folders/${id}/link`, { cookie, form: { slug } });
+  }
+
+  it("opens a file at /name and a folder at /name, only for investors with access", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const file = await addFile(folder, { name: "Deck.pdf" });
+    const other = await addFolder();
+    const deck = uid("deck").toLowerCase().replace(/_/g, "-");
+    const legal = uid("legal").toLowerCase().replace(/_/g, "-");
+    const elsewhere = uid("elsewhere").toLowerCase().replace(/_/g, "-");
+    expect((await setLink(admin, "file", file, deck)).headers.get("location")).toContain("m=slug_saved");
+    expect((await setLink(admin, "folder", folder, legal)).headers.get("location")).toContain("m=slug_saved");
+    expect((await setLink(admin, "folder", other, elsewhere)).headers.get("location")).toContain("m=slug_saved");
+
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    const page = await req(`/${deck}`, { cookie });
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("Deck.pdf");
+    expect((await req(`/d/${deck}`, { cookie })).status).toBe(200); // old style still works
+    expect((await req(`/${legal}`, { cookie })).headers.get("location")).toBe(`/room#${folder}`);
+
+    // No access and no such link look exactly the same.
+    const denied = await req(`/${elsewhere}`, { cookie });
+    const unknown = await req("/no-such-link-here", { cookie });
+    expect(denied.status).toBe(404);
+    expect(unknown.status).toBe(404);
+    expect(await denied.text()).toBe(await unknown.text());
+
+    // Admins land on their own view of it.
+    expect((await req(`/${deck}`, { cookie: admin })).headers.get("location")).toBe(`/admin/preview/f/${file}`);
+  });
+
+  it("brings people back to the link after signing in, and nowhere else", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const file = await addFile(folder);
+    const slug = uid("cap").toLowerCase().replace(/_/g, "-");
+    await setLink(admin, "file", file, slug);
+    const inv = await addInvestor({ folders: [folder] });
+
+    const out = await req(`/${slug}`);
+    expect(out.headers.get("location")).toBe(`/?next=%2F${slug}`);
+    expect(await (await req(`/?next=%2F${slug}`)).text()).toContain(`name="next" value="/${slug}"`);
+    await req("/login", { form: { email: inv.email, next: `/${slug}` } });
+    const link = (await lastLinkFor(inv.email))!;
+    expect(link).toContain(`next=%2F${slug}`);
+    const t = new URL(link).searchParams.get("t")!;
+    const res = await req("/auth", { form: { t, next: `/${slug}` } });
+    expect(res.headers.get("location")).toBe(`/${slug}`);
+
+    // A crafted destination is ignored.
+    for (const bad of ["//evil.example", "https://evil.example", "/admin", "/d/../admin", "/\\evil.example"]) {
+      const page = await (await req(`/?next=${encodeURIComponent(bad)}`)).text();
+      expect(page).not.toContain('name="next"');
+    }
+  });
+
+  it("refuses room words and names already taken by a file or folder", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const a = await addFile(folder);
+    const b = await addFile(folder);
+    for (const word of ["admin", "room", "setup", "login", "static", "settings"]) {
+      expect((await setLink(admin, "file", a, word)).headers.get("location")).toContain("m=slug_reserved");
+    }
+    expect((await setLink(admin, "file", a, "d")).headers.get("location")).toContain("m=slug_invalid");
+    const name = uid("shared").toLowerCase().replace(/_/g, "-");
+    await setLink(admin, "folder", folder, name);
+    expect((await setLink(admin, "file", b, name)).headers.get("location")).toContain("m=slug_taken");
+    // The room's own pages always win over links.
+    expect((await req("/admin", { cookie: admin })).status).toBe(200);
   });
 });

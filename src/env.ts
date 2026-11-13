@@ -45,6 +45,10 @@ export type Folder = {
   position: number;
   watermark: number;
   created_at: number;
+  /** Set on a subfolder: the top-level folder it sits in. Access follows the top-level folder. */
+  parent_id: string | null;
+  /** Optional short link: /<slug> opens the room at this folder. */
+  slug: string | null;
 };
 
 export type FileRow = {
@@ -58,6 +62,7 @@ export type FileRow = {
   allow_download: number; // 1 = investors get a Download button for this file
   slug: string | null; // optional custom link: /d/<slug>
   orientation: "portrait" | "landscape" | null;
+  placeholder: number; // 1 = a template placeholder: never visible until replaced
   uploaded_at: number;
   updated_at: number;
 };

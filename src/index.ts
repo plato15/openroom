@@ -8,6 +8,9 @@ import { adminRoutes } from "./routes/admin";
 import { investorRoutes } from "./routes/investor";
 import { previewRoutes } from "./routes/preview";
 import { publicRoutes, testRoutes } from "./routes/public";
+import { setupRoutes } from "./routes/setup";
+import { shortLinkRoutes } from "./routes/shortlinks";
+import { needsSetup } from "./settings";
 
 const app = new Hono<AppEnv>();
 
@@ -51,6 +54,16 @@ app.use("*", async (c, next) => {
   await next();
 });
 app.use("*", sameOrigin);
+
+// A brand new room has nobody who can manage it: every page leads to the setup screen until
+// someone claims it (see src/routes/setup.ts).
+const OPEN_DURING_SETUP = /^\/(setup(\/|$)|static\/|brand\/|theme\.css$|robots\.txt$|__test\/)/;
+app.use("*", async (c, next) => {
+  if (!OPEN_DURING_SETUP.test(c.req.path) && (await needsSetup(c.env))) {
+    return c.req.method === "GET" || c.req.method === "HEAD" ? c.redirect("/setup") : c.text("Not found", 404);
+  }
+  await next();
+});
 app.use("*", loadSession);
 
 // Colours and fonts from the BRAND_* settings, loaded after app.css.
@@ -80,10 +93,12 @@ app.get("/brand/:slot", async (c) => {
 
 app.use("/__test/*", async (c, next) => (c.env.ENVIRONMENT === "test" && isLocalOrigin(c.env.APP_ORIGIN) ? next() : c.notFound()));
 app.route("/", testRoutes);
+app.route("/", setupRoutes);
 app.route("/", publicRoutes);
 app.route("/", investorRoutes);
 app.route("/", previewRoutes);
 app.route("/", adminRoutes);
+app.route("/", shortLinkRoutes); // last: the room's own pages always win
 
 app.notFound((c) => c.html(messagePage(c.get("session") ?? null, "Page not found", "This page does not exist."), 404));
 app.onError((err, c) => {

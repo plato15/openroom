@@ -44,7 +44,7 @@ function investorNote(i: Investor) {
 previewRoutes.get("/admin/preview", async (c) => {
   const [folders, files] = await Promise.all([
     c.env.DB.prepare("SELECT * FROM folders ORDER BY position, name COLLATE NOCASE").all<Folder>(),
-    c.env.DB.prepare("SELECT * FROM files WHERE published = 1 ORDER BY name COLLATE NOCASE").all<FileRow>(),
+    c.env.DB.prepare("SELECT * FROM files WHERE published = 1 AND placeholder = 0 ORDER BY name COLLATE NOCASE").all<FileRow>(),
   ]);
   return c.html(
     page({
@@ -91,14 +91,14 @@ previewRoutes.get("/admin/preview/i/:investorId", async (c) => {
   if (!investor) return c.html(messagePage(c.get("session"), "Not found", "No such investor.", "/admin/investors"), 404);
   const [folders, files] = await Promise.all([
     c.env.DB.prepare(
-      `SELECT f.* FROM folders f JOIN grants g ON g.folder_id = f.id
+      `SELECT f.* FROM folders f JOIN grants g ON g.folder_id = COALESCE(f.parent_id, f.id)
         WHERE g.investor_id = ? ORDER BY f.position, f.name COLLATE NOCASE`,
     )
       .bind(investor.id)
       .all<Folder>(),
     c.env.DB.prepare(
-      `SELECT fi.* FROM files fi JOIN grants g ON g.folder_id = fi.folder_id
-        WHERE g.investor_id = ? AND fi.published = 1 ORDER BY fi.name COLLATE NOCASE`,
+      `SELECT fi.* FROM files fi JOIN folders f ON f.id = fi.folder_id JOIN grants g ON g.folder_id = COALESCE(f.parent_id, f.id)
+        WHERE g.investor_id = ? AND fi.published = 1 AND fi.placeholder = 0 ORDER BY fi.name COLLATE NOCASE`,
     )
       .bind(investor.id)
       .all<FileRow>(),

@@ -34,7 +34,6 @@ s.APP_ORIGIN = origin.origin;
 if (origin.protocol !== "https:" && !isLocalOrigin(origin.origin)) {
   fail("APP_ORIGIN must start with https:// (sign-in cookies only work over HTTPS). docker-compose.yml sets up HTTPS for you with Caddy.");
 }
-if (!s.ADMIN_EMAILS) fail("set ADMIN_EMAILS to at least one admin email");
 
 const dataDir = resolve(s.DATA_DIR ?? "/data");
 mkdirSync(dataDir, { recursive: true });

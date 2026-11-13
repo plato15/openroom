@@ -16,12 +16,12 @@ You need Node 22.12 or newer (`.nvmrc` says which one CI uses).
 ```bash
 git clone https://github.com/<you>/openroom.git && cd openroom
 npm install
-cp .dev.vars.example .dev.vars       # put your email after ADMIN_EMAILS=
+cp .dev.vars.example .dev.vars       # optional: set ADMIN_EMAILS to skip the setup screen
 npm run db:migrate:local
 npm run dev                          # http://localhost:8799
 ```
 
-No email is sent locally: after you enter your email, the sign-in link shows on the page.
+No email is sent locally: the setup code and sign-in links show on the page.
 
 To try the Docker build: `npm run build:node`, then the command under "Local development" in the README, or `docker build -t openroom .`.
 

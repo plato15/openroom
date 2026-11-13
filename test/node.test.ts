@@ -57,3 +57,23 @@ describe("node adapters", () => {
     expect(await signInFrom(createHandler(env, { trustProxy: true }), spoof)).toBe("8.8.8.8");
   });
 });
+
+describe("logo type check", () => {
+  const enc = (s: string) => new TextEncoder().encode(s);
+  it("accepts SVGs as design tools write them, and nothing that is not one", async () => {
+    const { sniffImage } = await import("../src/brand");
+    const illustrator = `<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 27.0.0, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [
+	<!ENTITY ns_extend "http://ns.adobe.com/Extensibility/1.0/">
+	<!ENTITY ns_ai "http://ns.adobe.com/AdobeIllustrator/10.0/">
+	<!ENTITY ns_graphs "http://ns.adobe.com/Graphs/1.0/">
+]>
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 40"><rect width="10" height="10"/></svg>`;
+    const inkscape = `<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n<!-- Created with Inkscape (http://www.inkscape.org/) -->\n\n<svg\n   width="210mm"\n   xmlns="http://www.w3.org/2000/svg"></svg>`;
+    const figma = `<svg width="120" height="24" viewBox="0 0 120 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10H0z"/></svg>`;
+    const bom = `﻿<svg xmlns="http://www.w3.org/2000/svg"/>`;
+    for (const svg of [illustrator, inkscape, figma, bom]) expect(sniffImage(enc(svg))).toBe("image/svg+xml");
+    for (const bad of ["<html><svg></svg></html>", "<!-- <svg> -->", "hello", '<?xml version="1.0"?><note/>']) expect(sniffImage(enc(bad))).toBeNull();
+  });
+});

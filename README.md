@@ -28,15 +28,18 @@ Using an AI coding agent to set it up? Point it at [AGENTS.md](AGENTS.md).
 - Read documents in the browser. PDFs show slides wide and documents tall; Excel, CSV and Word files open as read-only pages.
 
 **For you (the admin)**
-- Folders, uploads, and per-investor access you tick folder by folder.
+- Folders with one level of subfolders, uploads, and per-investor access you tick folder by folder (a folder's subfolders come with it).
 - **Download** switch on every file, off by default: investors view only unless you allow it.
 - **Stamping**: every PDF page, spreadsheet and Word page carries the viewer's email and the date.
 - **Activity**: every sign-in, view and download, per investor and per file.
 - **Preview** the room exactly as a given investor sees it, without signing out.
-- Optional **custom link** per file (`/d/pitch-deck`), and **replace with a new version** that keeps the link, access and history.
+- **Short links** for any file or folder, like `dataroom.acme.com/deck` or `dataroom.acme.com/legal`, with a **Copy link** button. Someone who is not signed in signs in first and lands right on it. A link is only a nicer address: access is checked on every open, and a link to something you cannot see looks exactly like one that does not exist. Names the room uses itself (`admin`, `room`, `setup`...) cannot be links.
+- **Replace with a new version** that keeps the link, access and history.
 - End dates per investor, instant revoke, invites by email.
 - Files named "draft" or "internal" upload hidden and cannot be published until renamed.
-- **Branding** tab: your name, colours, fonts and logos, changed in the app with no redeploy.
+- **Setup screen** the first time the room opens: your email, what the room is for, then your name, colours and logo. Nothing to configure while deploying.
+- **Templates** that set up the folders for you: Investor data room, Selling the company, Board portal, Client or partner portal (or start empty). Each section has **subfolders** with a hidden placeholder page in each, like "Pitch deck"; click **Upload your version** on each one and it becomes visible.
+- **Settings** tab: name, colours, fonts, logos and email sender, changed in the app with no redeploy.
 
 <p><img src="docs/admin-documents.jpg" alt="Admin: folders, files, download switches and visibility" width="88%"></p>
 
@@ -50,28 +53,53 @@ The same code also runs on Node for people who prefer their own server: the Dock
 
 ## Deploy to Cloudflare (recommended)
 
-About five minutes, no command line.
+About five minutes, no command line, nothing to fill in while deploying.
 
-You need a free [GitHub](https://github.com) account, a free [Cloudflare](https://dash.cloudflare.com/sign-up) account and a free [Resend](https://resend.com) account (it sends the sign-in emails).
+You need a free [GitHub](https://github.com) account and a free [Cloudflare](https://dash.cloudflare.com/sign-up) account.
 
-1. In Resend, open **API Keys** and create a key. Copy it.
-2. Click **Deploy to Cloudflare** above and sign in to Cloudflare.
-3. **Git account:** choose your personal GitHub account. Cloudflare makes your own private copy of Openroom there; that is how your room gets updates later. It only gets access to that one new repository.
-4. **Project name:** keep `openroom`, or any name that is not already a repository in that account.
-5. Leave the database and bucket names as they are.
-6. Fill in the only two fields that matter:
-   - **ADMIN_EMAILS**: the email you signed up to Resend with. The box hides what you type, like a password; that is normal.
-   - **RESEND_API_KEY**: the key from step 1.
-7. Click **Deploy**. Cloudflare creates the database and the private file bucket, sets up the tables and puts the room online.
-8. Open the `https://openroom.<your-name>.workers.dev` address it shows, enter your email, and click the link in your inbox. Then go to **Branding** to add your name, logo and colours.
+1. Click **Deploy to Cloudflare** above and sign in to Cloudflare.
+2. **Git account:** choose your GitHub account (the black cat icon). Cloudflare makes your own private copy of Openroom there; that is how your room gets updates later.
+3. Leave everything else as it is and click **Deploy**. Cloudflare creates the database and the private file bucket and puts the room online.
+4. Open the `https://openroom.<your-name>.workers.dev` address it shows. **The setup screen takes it from there:**
+   - **Your email and a Resend key.** Resend sends the sign-in emails; it is free at [resend.com](https://resend.com/signup). Sign up with the same email, open **API Keys**, create a key and paste it in.
+   - **A 6-digit code** sent to your email. Typing it makes you the room's owner. Nobody else can claim the room after that.
+   - **Your company name, colours and logo.**
+5. You land in your room. Add a folder, upload documents, invite an investor.
 
-If Cloudflare says it **could not create the Git repository**: a repository with that project name already exists, or you picked a GitHub organisation that has not allowed Cloudflare to create repositories. Pick your personal account or another project name.
+Do step 4 straight after deploying: until someone has claimed the room, the first person to open its address gets the setup screen. If the setup screen ever greets you on a room you did not just deploy, close it.
+
+Something went red in the Cloudflare form? See [If the button does not work](#if-the-button-does-not-work) just below: there is a route that always works.
 
 From then on, every push to your copy on GitHub redeploys the room and applies any new database changes.
 
-**Email.** Until you verify a domain, Resend only delivers to the email you signed up with, which is enough to sign in as admin. To email investors, add your domain in Resend (**Domains**, then the DNS records it shows), then add a variable `MAIL_FROM` with an address on it, like `Data Room <rooms@acme.com>`, in the Cloudflare dashboard under **Workers & Pages → openroom → Settings → Variables and Secrets**. Settings added there stay through every later update. Prefer Amazon SES? Add the secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (an IAM user allowed only `ses:SendEmail`), set `SES_REGION`, and leave `RESEND_API_KEY` empty.
+### If the button does not work
 
-**Your own domain (optional).** In the dashboard, **Workers & Pages → openroom → Settings → Domains & Routes → Add → Custom domain**, enter for example `dataroom.acme.com` (the domain must be on your Cloudflare account), then add the variable `APP_ORIGIN` with `https://dataroom.acme.com` (same place as `MAIL_FROM` above). Sign-in links then always use that address.
+The button has to create a new repository in your GitHub account, and that step fails when Cloudflare's GitHub connection on your account is old or tangled (common if your Cloudflare account already deploys other projects). You will see one of these in the form:
+
+- "Cloudflare could not create the Git repository right now"
+- "Your GitHub authorization has expired"
+- "An unknown error has occurred", or "Request timed out"
+- "A repository with that name already exists"
+
+Also check the **Git account** list: entries with an orange fox icon are **GitLab** groups, not GitHub. Pick a GitHub account (the black cat icon).
+
+If it still fails, copy Openroom yourself and point Cloudflare at the copy. About five minutes, still no command line:
+
+1. **Copy it.** On [github.com/plato15/openroom](https://github.com/plato15/openroom), click **Fork**, pick your account and click **Create fork**.
+2. **Connect it.** In the Cloudflare dashboard: **Workers & Pages → Create → Continue with GitHub**, pick your account and the `openroom` repository, then **Next**.
+3. **Settings on that page:**
+   - **Project name:** `openroom` (or anything).
+   - **Build command:** leave empty.
+   - **Deploy command:** `npm run deploy`
+   - **Enable Preview builds:** off.
+4. Click **Deploy**. The build log shows the database and file bucket being created and ends with your `https://openroom.<your-name>.workers.dev` address.
+5. Open that address: the setup screen takes it from there (step 4 above).
+
+To get new Openroom versions later, click **Sync fork** on your copy in GitHub; Cloudflare redeploys by itself.
+
+**Email.** Until you verify a domain, Resend only delivers to the email you signed up with, which is enough to set up and sign in as owner. To email investors, add your domain in Resend (**Domains**, then the DNS records it shows), then in your room open **Settings → Email** and set the sender to an address on it, like `Data Room <rooms@acme.com>`. Prefer Amazon SES? Add the Cloudflare secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (an IAM user allowed only `ses:SendEmail`) and the variables `SES_REGION` and `MAIL_FROM`.
+
+**Your own domain (optional).** In the Cloudflare dashboard, **Workers & Pages → openroom → Settings → Domains & Routes → Add → Custom domain**, enter for example `dataroom.acme.com` (the domain must be on your Cloudflare account), then under **Settings → Variables and Secrets** add the variable `APP_ORIGIN` with `https://dataroom.acme.com`. Sign-in links then always use that address. Variables added there stay through every later update.
 
 **Plan.** The free Workers plan runs the room. Stamping a long PDF can use more CPU time than the free plan allows per request, so for a real fundraise use **Workers Paid** ($5 a month).
 
@@ -80,19 +108,16 @@ From then on, every push to your copy on GitHub redeploys the room and applies a
 <details>
 <summary>Deploying from the command line instead</summary>
 
-You need Node 22.12 or newer.
+You need Node 22.12 or newer: check with `node -v`. Wrangler stops with "Wrangler requires at least Node.js v22.12.0" on older versions; install a newer Node from [nodejs.org](https://nodejs.org) first.
 
 ```bash
 git clone https://github.com/plato15/openroom.git && cd openroom
 npm install
 npx wrangler login
-npx wrangler secret put ADMIN_EMAILS
-npx wrangler secret put RESEND_API_KEY
-npx wrangler deploy      # first time: creates the database and bucket
-npm run deploy           # applies database changes, then deploys
+npm run deploy      # creates the database and bucket, deploys, sets up the tables
 ```
 
-Use `npm run deploy` for every later update.
+If it asks whether to create a database or bucket, or which account to use, accept the defaults. Then open the address it prints and follow the setup screen. Use `npm run deploy` again for every later update.
 </details>
 
 ## Run with Docker
@@ -100,35 +125,35 @@ Use `npm run deploy` for every later update.
 For your own server (a VPS, a home server, anything with Docker). The image is the same app on Node, with the database in a SQLite file and documents in a folder (or any S3-compatible bucket).
 
 1. Point a domain, for example `dataroom.acme.com`, at your server.
-2. Get the files and fill in the settings:
+2. Get the files and set your domain:
    ```bash
    git clone https://github.com/plato15/openroom.git && cd openroom
    cp .env.example .env
    ```
-   In `.env` set `DOMAIN`, `ADMIN_EMAILS`, `MAIL_FROM`, and one email option: `RESEND_API_KEY`, `SMTP_URL` (any mail server, like `smtp://user:password@smtp.example.com:587`) or the SES keys.
+   In `.env`, set `DOMAIN`. Nothing else is needed; the rest is optional.
 3. Start it:
    ```bash
    docker compose up -d
    ```
+4. Open `https://<your domain>` and follow the setup screen (your email, a Resend key, your name, colours and logo).
 
 [Caddy](https://caddyserver.com) gets an HTTPS certificate for your domain by itself; sign-in cookies need HTTPS. Database and files are kept in the `openroom-data` volume: back it up. To update, run `docker compose pull && docker compose up -d`; database changes apply on start.
+
+Prefer your own mail server? Set `SMTP_URL` in `.env` (like `smtp://user:password@smtp.example.com:587`) and `MAIL_FROM`; settings in `.env` win over the setup screen.
 
 Already have a proxy? Run the image on its own and send traffic to port 3000:
 
 ```bash
-docker run -d -p 3000:3000 -v openroom-data:/data \
-  -e APP_ORIGIN=https://dataroom.acme.com -e ADMIN_EMAILS=you@acme.com \
-  -e MAIL_FROM="Data Room <rooms@acme.com>" -e RESEND_API_KEY=re_... \
-  ghcr.io/plato15/openroom
+docker run -d -p 3000:3000 -v openroom-data:/data -e APP_ORIGIN=https://dataroom.acme.com ghcr.io/plato15/openroom
 ```
 
 Set `TRUST_PROXY=true` only when your proxy is the sole way in, so visitor addresses in Activity come from it. To keep files in S3, R2, B2 or MinIO, set `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY`.
 
 ## Make it yours
 
-Admins change the look on the **Branding** tab: company name, legal name, who invites, main and header colours, fonts (any [Google Font](https://fonts.google.com)), and three logos (header, email, browser tab). It takes effect straight away, with no redeploy. Logos are PNG, JPEG, WebP or SVG up to 512 KB; email logos must be PNG or JPEG, since email apps do not show SVG.
+The setup screen asks for the basics (name, colours, logo). Afterwards admins change everything on the **Settings** tab: company name, legal name, who invites, main and header colours, fonts (any [Google Font](https://fonts.google.com)), and three logos (header, email, browser tab). It takes effect straight away, with no redeploy. Logos are PNG, JPEG, WebP or SVG up to 512 KB; email logos must be PNG or JPEG, since email apps do not show SVG.
 
-You do not need any of the settings below. If you would rather set the defaults outside the app (used for anything left blank on the Branding tab), add them as variables in the Cloudflare dashboard, or as environment variables for Docker:
+You do not need any of the settings below. If you would rather set the defaults outside the app (used for anything left blank on the Settings tab), add them as variables in the Cloudflare dashboard, or as environment variables for Docker:
 
 | Setting | What it changes |
 |---|---|
@@ -141,22 +166,22 @@ You do not need any of the settings below. If you would rather set the defaults 
 
 ## All settings
 
-Every setting, in one place. Only the ones marked **Yes** are needed; everything else has a default. On Cloudflare, add them in the dashboard (**Workers & Pages → openroom → Settings → Variables and Secrets**; they stay through updates) or with `npx wrangler secret put NAME`. With Docker, everything is an environment variable (`.env`).
+Every setting, in one place. **None of them are needed:** the setup screen asks for your email and Resend key, and everything else has a default. Use these only to set things outside the app; a setting here wins over what the setup screen saved. On Cloudflare, add them in the dashboard (**Workers & Pages → openroom → Settings → Variables and Secrets**; they stay through updates) or with `npx wrangler secret put NAME`. With Docker, everything is an environment variable (`.env`).
 
 | Setting | Needed? | Where | What it is |
 |---|---|---|---|
-| `ADMIN_EMAILS` | Yes | Both (secret) | Who manages the room, comma separated. |
-| `APP_ORIGIN` | Docker: yes. Cloudflare: only with a custom domain | Both | The room's address, like `https://dataroom.acme.com`. No path, no trailing slash. |
-| `MAIL_FROM` | Docker: yes. Cloudflare: once your domain is verified | Both | Sender of sign-in emails, like `Data Room <rooms@acme.com>`. Must be allowed by your email provider. Default `Data Room <onboarding@resend.dev>`, which only reaches the Resend account owner. |
-| `RESEND_API_KEY` | One email option | Both (secret) | A [Resend](https://resend.com) API key. |
-| `SMTP_URL` | One email option | Docker only | `smtp://user:password@host:587` or `smtps://user:password@host:465`. |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | One email option | Both (secret) | Amazon SES keys (an IAM user allowed only `ses:SendEmail`). |
+| `ADMIN_EMAILS` | No | Both (secret) | Extra people who manage the room, comma separated, on top of the owner from the setup screen. Set it before the first visit to skip the setup screen's claim step. |
+| `APP_ORIGIN` | Docker without compose: yes. Cloudflare: only with a custom domain | Both | The room's address, like `https://dataroom.acme.com`. No path, no trailing slash. |
+| `MAIL_FROM` | No | Both | Sender of sign-in emails, like `Data Room <rooms@acme.com>`. Must be allowed by your email provider. Default `Data Room <onboarding@resend.dev>`, which only reaches the Resend account owner. |
+| `RESEND_API_KEY` | No | Both (secret) | A [Resend](https://resend.com) API key, instead of the one saved on the setup screen. |
+| `SMTP_URL` | No | Docker only | `smtp://user:password@host:587` or `smtps://user:password@host:465`. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | No | Both (secret) | Amazon SES keys (an IAM user allowed only `ses:SendEmail`). |
 | `SES_REGION` | With SES | Both | Region where the SES sender is verified. Default `us-east-1`. |
 | `MAIL_PROVIDER` | No | Both | Force `resend`, `smtp` or `ses`. Otherwise the first one with its keys set is used, in that order. |
-| `BRAND_NAME`, `BRAND_LEGAL_NAME`, `BRAND_INVITER`, `BRAND_COLOR`, `BRAND_DARK`, `BRAND_FONT_BODY`, `BRAND_FONT_DISPLAY` | No | Both | Default branding (see [Make it yours](#make-it-yours)). The Branding tab overrides them. |
+| `BRAND_NAME`, `BRAND_LEGAL_NAME`, `BRAND_INVITER`, `BRAND_COLOR`, `BRAND_DARK`, `BRAND_FONT_BODY`, `BRAND_FONT_DISPLAY` | No | Both | Default branding (see [Make it yours](#make-it-yours)). The Settings tab overrides them. |
 | `SHOW_CREDIT` | No | Both | `"false"` hides "Powered by Openroom". |
 | `ENVIRONMENT` | No | Both | `production` (default). `local` only for development: on a local address it shows sign-in links on the page instead of emailing them. |
-| `DOMAIN` | Yes with compose | Docker (`docker-compose.yml`) | Your domain without `https://`. Compose builds `APP_ORIGIN` from it. |
+| `DOMAIN` | Yes, with Docker compose | Docker (`docker-compose.yml`) | Your domain without `https://`. Compose builds `APP_ORIGIN` from it. |
 | `DATA_DIR` | No | Docker only | Where the database and files are kept. Default `/data` (the `openroom-data` volume). |
 | `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | No | Docker only | Keep files in an S3-compatible bucket instead of `DATA_DIR`. All five, or none. |
 | `TRUST_PROXY` | No | Docker only | `true` when a proxy you control is the only way in (compose sets it). |
@@ -164,7 +189,7 @@ Every setting, in one place. Only the ones marked **Yes** are needed; everything
 
 ## Updating
 
-- **Cloudflare (button):** your copy on GitHub is yours. To get new Openroom versions, open it on GitHub and click **Sync fork** (or merge from `plato15/openroom`). Cloudflare redeploys and applies database changes by itself.
+- **Cloudflare (button or fork):** your copy on GitHub is yours. To get new Openroom versions, open it on GitHub and click **Sync fork** (or merge from `plato15/openroom`). Cloudflare redeploys and applies database changes by itself.
 - **Cloudflare (command line):** `git pull && npm install && npm run deploy`.
 - **Docker:** `docker compose pull && docker compose up -d`. Database changes apply when the container starts.
 
@@ -180,12 +205,17 @@ Read [CHANGELOG.md](CHANGELOG.md) first: anything you need to do by hand is list
 | Problem | What to check |
 |---|---|
 | The sign-in email never arrives | Check spam. With Resend's `onboarding@resend.dev` sender, mail only reaches the email you signed up to Resend with: verify your domain and change `MAIL_FROM`. Then look at the logs (Cloudflare: **Workers → openroom → Logs**; Docker: `docker compose logs openroom`) for a line starting `mail not sent`. |
-| "Check your email" shows but I am not an admin | Your address must be in `ADMIN_EMAILS` exactly (comma separated, no quotes). Investors must be added on the Investors tab first; anyone else gets the same page but no email, on purpose. |
+| "Check your email" shows but no link arrives | You must be the owner from the setup screen, or in `ADMIN_EMAILS` exactly (comma separated, no quotes). Investors must be added on the Investors tab first; anyone else gets the same page but no email, on purpose. |
 | `Forbidden` after submitting a form | `APP_ORIGIN` does not match the address in your browser. Fix it, or on Cloudflare leave it empty. |
 | Docker: "Openroom cannot start" | The line after it says which setting is missing or wrong. |
 | Docker: Caddy cannot get a certificate | The domain's DNS must point at the server, and ports 80 and 443 must be open. |
 | Cloudflare: a big PDF does not open (error 1102 or "exceeded CPU") | You are on the free Workers plan. Move to Workers Paid ($5 a month). |
-| The Branding change does not show | Reload the page. Other Cloudflare locations pick it up within 10 seconds. |
+| A Settings change does not show | Reload the page. Other Cloudflare locations pick it up within 10 seconds. |
+| Deploy button: "could not create the Git repository", "authorization has expired", "unknown error" or "Request timed out" | Cloudflare's GitHub connection on your account. Use [the fork route](#if-the-button-does-not-work). |
+| Cloudflare build log: the first build fails at the database migrations step | The deploy command tried to set up the tables before the first deploy had created the database. Use `npm run deploy` as the deploy command (it deploys first), and run the build again. |
+| Setup screen: "Resend did not accept that email" | Check the key, and use the email you signed up to Resend with: Resend's test sender only reaches that one until you verify a domain. |
+| The setup screen shows on a room I did not just deploy | Someone has the address before its owner claimed it. Close it. If it is your room, claim it straight away; if someone else claimed it first, delete the Worker (or the Docker volume) and deploy again. |
+| "Wrangler requires at least Node.js v22.12.0" | Your computer's Node is too old. Install Node 22 or newer from [nodejs.org](https://nodejs.org). |
 
 ## What opens in the browser
 
@@ -200,7 +230,7 @@ Read [CHANGELOG.md](CHANGELOG.md) first: anything you need to do by hand is list
 ## Local development
 
 ```bash
-cp .dev.vars.example .dev.vars    # set ADMIN_EMAILS to any email
+cp .dev.vars.example .dev.vars    # optional: set ADMIN_EMAILS to skip the setup screen
 npm run db:migrate:local
 npm run dev                       # http://localhost:8799
 ```
@@ -209,10 +239,10 @@ The Node build runs locally too:
 
 ```bash
 npm run build:node
-DATA_DIR=./data APP_ORIGIN=http://localhost:3000 ADMIN_EMAILS=you@example.com ENVIRONMENT=local npm run start:node
+DATA_DIR=./data APP_ORIGIN=http://localhost:3000 ENVIRONMENT=local npm run start:node
 ```
 
-On a local address no email is sent: the sign-in link appears on the "Check your email" page.
+On a local address no email is sent: the setup code and sign-in links appear on the page.
 
 ## Tests
 
@@ -233,7 +263,11 @@ The suite runs twice: once in the real Workers runtime (Miniflare) and once agai
 | `src/routes/investor.ts` | Investor room and document viewer |
 | `src/routes/preview.ts` | Admin Preview (the room as an investor sees it) |
 | `src/routes/admin.ts` | Documents, Investors, Activity |
-| `src/routes/branding.ts` | The Branding tab |
+| `src/routes/setup.ts` | First-time setup: claim the room with an emailed code, then branding |
+| `src/routes/branding.ts` | The Settings tab: branding and email |
+| `src/settings.ts` | Settings saved in the database: owner, email, who is admin |
+| `src/templates.ts` | Room templates: folders, subfolders and placeholder pages |
+| `src/links.ts`, `src/routes/shortlinks.ts` | Short links (`/deck`), reserved names, where to go after sign-in |
 | `src/render.ts` | Excel, CSV and Word as read-only pages |
 | `src/watermark.ts` | PDF stamping |
 | `src/email.ts` | Resend, SES and SMTP sending, and the two emails |

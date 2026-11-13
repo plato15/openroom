@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { safeNext } from "../links";
 import { html } from "hono/html";
 import {
   activeInvestor,
@@ -22,11 +23,13 @@ export const publicRoutes = new Hono<AppEnv>();
 
 publicRoutes.get("/", (c) => {
   const s = c.get("session");
-  if (s) return c.redirect(s.role === "admin" ? "/admin" : "/room");
-  return c.html(signInPage());
+  const next = safeNext(c.req.query("next"));
+  if (s) return c.redirect(next ?? (s.role === "admin" ? "/admin" : "/room"));
+  return c.html(signInPage(undefined, next));
 });
 
-function signInPage(error?: string) {
+/** `next`: where the person was going (a document or folder link); they land there after signing in. */
+function signInPage(error?: string, next?: string | null) {
   return page({
     title: "Sign in",
     narrow: true,
@@ -38,6 +41,7 @@ function signInPage(error?: string) {
       <section class="card">
         ${notice("error", error)}
         <form method="post" action="/login" class="stack">
+          ${next ? html`<input type="hidden" name="next" value="${next}">` : ""}
           <label for="email">Email address</label>
           <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required autofocus placeholder="you@fund.com">
           <button type="submit" class="btn wide">Email me a sign-in link</button>
@@ -49,14 +53,15 @@ function signInPage(error?: string) {
 publicRoutes.post("/login", async (c) => {
   const form = await c.req.parseBody();
   const email = normalizeEmail(form.email);
-  if (!email) return c.html(signInPage("Please enter a valid email address."), 400);
+  const next = safeNext(form.next);
+  if (!email) return c.html(signInPage("Please enter a valid email address.", next), 400);
 
   // Same answer whether or not the email is invited, so the page never reveals who is.
   let devLink: string | null = null;
-  const eligible = isAdmin(c.env, email) || !!(await activeInvestor(c.env, email));
+  const eligible = (await isAdmin(c.env, email)) || !!(await activeInvestor(c.env, email));
   if (eligible && (await recentLoginRequests(c.env, email)) < LOGIN_REQUESTS_PER_15_MIN) {
     const token = await createLoginToken(c.env, email);
-    const link = `${c.env.APP_ORIGIN}/auth?t=${encodeURIComponent(token)}`;
+    const link = `${c.env.APP_ORIGIN}/auth?t=${encodeURIComponent(token)}${next ? `&next=${encodeURIComponent(next)}` : ""}`;
     if (c.env.ENVIRONMENT === "local" && isLocalOrigin(c.env.APP_ORIGIN)) devLink = link;
     const send = sendMail(c.env, signInMail(c.env.APP_ORIGIN, email, link)).then(async (ok) => {
       if (!ok) await logEvent(c, { email, action: "email_failed" });
@@ -94,6 +99,7 @@ publicRoutes.post("/login", async (c) => {
  */
 publicRoutes.get("/auth", async (c) => {
   const token = c.req.query("t") ?? "";
+  const next = safeNext(c.req.query("next"));
   const usable = token.length > 20 && (await tokenIsUsable(c.env, token));
   if (!usable) return c.html(expiredPage(), 400);
   return c.html(
@@ -105,6 +111,7 @@ publicRoutes.get("/auth", async (c) => {
         <p class="muted">Continue to open the ${brand().roomName}.</p>
         <form method="post" action="/auth">
           <input type="hidden" name="t" value="${token}">
+          ${next ? html`<input type="hidden" name="next" value="${next}">` : ""}
           <button type="submit" class="btn wide">Continue to the data room</button>
         </form>
       </section>`,
@@ -130,15 +137,15 @@ publicRoutes.post("/auth", async (c) => {
   const email = token ? await consumeLoginToken(c.env, token) : null;
   if (!email) return c.html(expiredPage(), 400);
 
-  if (isAdmin(c.env, email)) {
+  if (await isAdmin(c.env, email)) {
     await startSession(c, email, "admin");
     await logEvent(c, { email, action: "sign_in" });
-    return c.redirect("/admin", 303);
+    return c.redirect(safeNext(form.next) ?? "/admin", 303);
   }
   if (await activeInvestor(c.env, email)) {
     await startSession(c, email, "investor");
     await logEvent(c, { email, action: "sign_in" });
-    return c.redirect("/room", 303);
+    return c.redirect(safeNext(form.next) ?? "/room", 303);
   }
   return c.html(expiredPage(), 400);
 });

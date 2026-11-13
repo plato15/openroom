@@ -24,26 +24,49 @@ export function roomBody(opts: {
     const folder = folderById.get(file.folder_id);
     if (folder && visibleToInvestor(file)) byFolder.get(folder.id)!.push(file);
   }
-  const total = [...byFolder.values()].reduce((n, list) => n + list.length, 0);
+  // Top-level folders, each with its subfolders. A subfolder whose parent is not shared is not shown.
+  const top = folders.filter((f) => !f.parent_id);
+  const subsOf = (id: string) => folders.filter((f) => f.parent_id === id);
+  const countIn = (f: Folder) => (byFolder.get(f.id)?.length ?? 0) + subsOf(f.id).reduce((n, s) => n + (byFolder.get(s.id)?.length ?? 0), 0);
+  const total = top.reduce((n, f) => n + countIn(f), 0);
   const greeting = investor?.name ? `Welcome, ${investor.name.split(" ")[0]}` : "Welcome";
 
   return html`<section class="hero">
       <p class="eyebrow">${investor?.firm || brand().roomName}</p>
       <h1 class="display">${greeting}</h1>
-      <p class="lead">${folders.length
-        ? `${total} ${total === 1 ? "document" : "documents"} in ${folders.length} ${folders.length === 1 ? "folder" : "folders"}, shared with you for due diligence.`
+      <p class="lead">${top.length
+        ? `${total} ${total === 1 ? "document" : "documents"} in ${top.length} ${top.length === 1 ? "folder" : "folders"}, shared with you for due diligence.`
         : "Nothing has been shared with you yet. You will get an email when documents are ready."}</p>
       ${investor?.expires_at ? html`<p class="small muted">Your access is open until ${formatDate(investor.expires_at)}.</p>` : ""}
     </section>
-    ${folders.length > 1
+    ${top.length > 1
       ? html`<nav class="chips" aria-label="Folders">
-          ${folders.map((f) => html`<a href="#${f.id}" class="chip">${f.name}</a>`)}
+          ${top.map((f) => html`<a href="#${f.id}" class="chip">${f.name}</a>`)}
         </nav>`
       : ""}
-    ${folders.map((folder) => folderCard(folder, byFolder.get(folder.id) ?? [], links))}`;
+    ${top.map((folder) => folderCard(folder, byFolder.get(folder.id) ?? [], countIn(folder), subsOf(folder.id), byFolder, links))}`;
 }
 
-function folderCard(folder: Folder, files: FileRow[], links: RoomLinks) {
+function fileList(files: FileRow[], links: RoomLinks) {
+  return html`<ul class="files">
+    ${files.map(
+      (file) => html`<li>
+        <a class="file" href="${links.file(fileRef(file))}">
+          <span class="kind kind-${fileKind(file.content_type, file.name).toLowerCase()}">${fileKind(file.content_type, file.name)}</span>
+          <span class="file-main">
+            <span class="file-name">${file.name}</span>
+            <span class="file-meta">${formatSize(file.size)} · Updated ${formatDate(file.updated_at)}</span>
+          </span>
+          <span class="chev" aria-hidden="true">›</span>
+        </a>
+      </li>`,
+    )}
+  </ul>`;
+}
+
+function folderCard(folder: Folder, files: FileRow[], count: number, subfolders: Folder[], byFolder: Map<string, FileRow[]>, links: RoomLinks) {
+  // Subfolders with nothing to show stay out of the way (templates create many until they are filled).
+  const shown = subfolders.filter((s) => (byFolder.get(s.id)?.length ?? 0) > 0);
   return html`<section class="card folder" id="${folder.id}">
     <div class="folder-head">
       <div class="folder-icon" aria-hidden="true"></div>
@@ -51,25 +74,17 @@ function folderCard(folder: Folder, files: FileRow[], links: RoomLinks) {
         <h2 class="h3">${folder.name}</h2>
         ${folder.description ? html`<p class="muted small">${folder.description}</p>` : ""}
       </div>
-      <span class="count">${files.length} ${files.length === 1 ? "document" : "documents"}</span>
+      <span class="count">${count} ${count === 1 ? "document" : "documents"}</span>
     </div>
     <div class="folder-body">
-    ${files.length
-      ? html`<ul class="files">
-          ${files.map(
-            (file) => html`<li>
-              <a class="file" href="${links.file(fileRef(file))}">
-                <span class="kind kind-${fileKind(file.content_type, file.name).toLowerCase()}">${fileKind(file.content_type, file.name)}</span>
-                <span class="file-main">
-                  <span class="file-name">${file.name}</span>
-                  <span class="file-meta">${formatSize(file.size)} · Updated ${formatDate(file.updated_at)}</span>
-                </span>
-                <span class="chev" aria-hidden="true">›</span>
-              </a>
-            </li>`,
-          )}
-        </ul>`
-      : html`<p class="muted small empty">No documents here yet.</p>`}
+    ${files.length ? fileList(files, links) : ""}
+    ${shown.map(
+      (s) => html`<div class="subfolder" id="${s.id}">
+        <h3 class="subfolder-title">${s.name}</h3>
+        ${fileList(byFolder.get(s.id) ?? [], links)}
+      </div>`,
+    )}
+    ${!count ? html`<p class="muted small empty">No documents here yet.</p>` : ""}
     </div>
   </section>`;
 }

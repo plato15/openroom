@@ -1,6 +1,7 @@
 import { AwsClient } from "aws4fetch";
 import { brand } from "./brand";
 import type { Env } from "./env";
+import { getMailSettings, type MailSettings } from "./settings";
 import { isLocalOrigin } from "./util";
 
 export type Mail = { to: string; subject: string; text: string; html: string; link?: string };
@@ -38,13 +39,22 @@ export function mailProvider(env: Env): MailProvider {
   return null;
 }
 
-export async function sendMail(env: Env, mail: Mail): Promise<boolean> {
+/**
+ * Sends one email. Deployment settings (RESEND_API_KEY, MAIL_FROM...) win; otherwise the email
+ * settings saved in the app are used. `use` sends with given settings instead: the setup screen
+ * tests the founder's key by sending their code with it before anything is saved.
+ */
+export async function sendMail(baseEnv: Env, mail: Mail, use?: MailSettings): Promise<boolean> {
   // Mail is only captured instead of sent on a local address; anywhere else it is really sent.
-  if (env.ENVIRONMENT !== "production" && isLocalOrigin(env.APP_ORIGIN)) {
+  if (baseEnv.ENVIRONMENT !== "production" && isLocalOrigin(baseEnv.APP_ORIGIN)) {
     outbox.push(mail);
-    if (env.ENVIRONMENT === "local") console.log(`[mail to ${mail.to}] ${mail.subject} ${mail.link ?? ""}`);
+    if (baseEnv.ENVIRONMENT === "local") console.log(`[mail to ${mail.to}] ${mail.subject} ${mail.link ?? ""}`);
     return true;
   }
+  const saved = use ?? (await getMailSettings(baseEnv)) ?? {};
+  const env: Env = use
+    ? { ...baseEnv, MAIL_PROVIDER: "resend", RESEND_API_KEY: use.resendApiKey, MAIL_FROM: use.mailFrom || baseEnv.MAIL_FROM }
+    : { ...baseEnv, RESEND_API_KEY: baseEnv.RESEND_API_KEY || saved.resendApiKey, MAIL_FROM: baseEnv.MAIL_FROM || saved.mailFrom };
   const provider = mailProvider(env);
   try {
     if (provider === "resend") return await sendResend(env, mail);
@@ -141,6 +151,19 @@ export function signInMail(origin: string, to: string, link: string): Mail {
     subject: `Your sign-in link for the ${brand().roomName}`,
     text: `${lines[0]}\n\n${link}\n\n${lines[1]}\n`,
     html: shell(origin, `Sign in to the ${brand().roomName}`, lines, { href: link, label: "Open the data room" }),
+  };
+}
+
+export function setupCodeMail(origin: string, to: string, code: string): Mail {
+  const lines = [
+    `Your code to finish setting up your data room at ${origin.replace(/^https?:\/\//, "")} is ${code}.`,
+    "It works for 15 minutes. If you did not just set up a data room, ignore this email.",
+  ];
+  return {
+    to,
+    subject: `Your setup code: ${code}`,
+    text: `${lines.join("\n\n")}\n`,
+    html: shell(origin, `Your setup code is ${code}`, lines),
   };
 }
 

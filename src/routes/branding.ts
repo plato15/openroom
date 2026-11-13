@@ -18,7 +18,9 @@ import {
   type LogoSlot,
 } from "../brand";
 import type { AppEnv } from "../env";
+import { DEFAULT_MAIL_FROM } from "../email";
 import { notice, page } from "../layout";
+import { getMailSettings, putSetting } from "../settings";
 
 /** The Branding tab. Mounted inside adminRoutes, so only admins reach it. */
 export const brandingRoutes = new Hono<AppEnv>();
@@ -34,6 +36,9 @@ const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
   logo_big: ["error", "That image is over 512 KB. Export a smaller one."],
   logo_type: ["error", "That file type is not accepted here. See the formats listed under each logo."],
   reset: ["ok", "Branding reset to the defaults."],
+  email_saved: ["ok", "Email settings saved."],
+  email_key: ["error", "That does not look like a Resend API key. It starts with re_."],
+  email_from: ["error", "The sender should look like Data Room <rooms@yourdomain.com>."],
 };
 
 const SLOT_INFO: Record<LogoSlot, { title: string; hint: string; formats: string; bg: string }> = {
@@ -64,23 +69,23 @@ const isSlot = (s: string): s is LogoSlot => (LOGO_SLOTS as string[]).includes(s
 const back = (code: string, anchor = "") => `/admin/branding?m=${code}${anchor}`;
 
 brandingRoutes.get("/admin/branding", async (c) => {
-  const saved = await readBrandSettings(c.env);
+  const [saved, mail] = await Promise.all([readBrandSettings(c.env), getMailSettings(c.env)]);
   const b = brand();
   const defaults = brandFrom({ ...c.env }, {});
   const code = c.req.query("m");
   const m = code ? MESSAGES[code] : undefined;
   return c.html(
     page({
-      title: "Branding",
+      title: "Settings",
       session: c.get("session"),
       nav: "branding",
-      body: html`<h1 class="h2">Branding</h1>
-        <p class="muted small">How the room looks to investors: names, colours, fonts and logos. Changes show straight away, with no redeploy.</p>
+      body: html`<h1 class="h2">Settings</h1>
+        <p class="muted small">How the room looks to investors, and how it sends email. Changes show straight away, with no redeploy.</p>
         ${m ? notice(m[0], m[1]) : ""}
 
         <section class="card brand-preview" aria-label="Preview">
           <div class="bp-bar">
-            <img src="${b.logo}" alt="${b.name}" height="22">
+            ${b.logo ? html`<img src="${b.logo}" alt="${b.name}" height="22">` : html`<span class="brand-name">${b.name}</span>`}
             <span class="brand-tag">Data room</span>
           </div>
           <div class="bp-body">
@@ -130,7 +135,7 @@ brandingRoutes.get("/admin/branding", async (c) => {
             ${LOGO_SLOTS.map((slot) => {
               const info = SLOT_INFO[slot];
               const custom = !!saved.logos?.[slot];
-              const src = slot === "header" ? b.logo : slot === "icon" ? b.icon : (b.emailLogo ?? "");
+              const src = (slot === "header" ? b.logo : slot === "icon" ? b.icon : b.emailLogo) ?? "";
               return html`<div class="logo-slot">
                 <p class="small"><strong>${info.title}</strong> ${custom ? html`<span class="badge blue">Custom</span>` : html`<span class="badge grey">Default</span>`}</p>
                 <div class="logo-view ${info.bg}">${src ? html`<img src="${src}" alt="${info.title}" class="${slot === "icon" ? "icon" : ""}">` : html`<span class="muted small">Name shown as text</span>`}</div>
@@ -146,6 +151,8 @@ brandingRoutes.get("/admin/branding", async (c) => {
             })}
           </div>
         </section>
+
+        ${emailCard(c.env, mail)}
 
         <form method="post" action="/admin/branding/reset" class="card row-between" data-confirm="Reset all branding to the defaults?">
           <span class="small muted">Go back to the deployment defaults: names, colours, fonts and logos.</span>
@@ -218,4 +225,37 @@ brandingRoutes.post("/admin/branding/reset", async (c) => {
   await saveBrandSettings(c.env, {});
   await c.env.FILES.delete(LOGO_SLOTS.map(logoKey));
   return c.redirect(back("reset"), 303);
+});
+
+// ---------- Email ----------
+
+const RESEND_KEY = /^re_[A-Za-z0-9_]{8,120}$/;
+const SENDER = /^([^\x00-\x1f<>"]{1,60} )?<?[^\s<>@"]+@[^\s<>@"]+\.[A-Za-z]{2,}>?$/;
+
+/** Who sign-in emails come from, and the Resend key. The key is never shown again, only whether one is saved. */
+function emailCard(env: AppEnv["Bindings"], mail: { resendApiKey?: string; mailFrom?: string } | null) {
+  const fromDeploy = !!(env.RESEND_API_KEY || env.MAIL_FROM || env.SMTP_URL || env.AWS_ACCESS_KEY_ID);
+  return html`<form method="post" action="/admin/branding/email" class="card stack" id="email">
+    <h2 class="h3">Email</h2>
+    ${fromDeploy ? notice("info", "Email is also set in the deployment settings, which take priority over what is saved here.") : ""}
+    <label><span>Sender <span class="muted small hint">(who sign-in emails and invites come from)</span></span>
+      <input name="mailFrom" value="${mail?.mailFrom ?? ""}" placeholder="${DEFAULT_MAIL_FROM}" spellcheck="false">
+    </label>
+    <p class="small muted">Resend's test sender (onboarding@resend.dev) only reaches the email your Resend account uses. To email investors, add your domain in Resend under <strong>Domains</strong>, then put an address on it here, like Data Room &lt;rooms@yourdomain.com&gt;.</p>
+    <label>Resend API key
+      <input name="resendApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="${mail?.resendApiKey ? "Saved. Paste a new key to replace it." : "re_..."}">
+    </label>
+    <div><button class="btn" type="submit">Save email settings</button></div>
+  </form>`;
+}
+
+brandingRoutes.post("/admin/branding/email", async (c) => {
+  const form = await c.req.parseBody();
+  const mailFrom = typeof form.mailFrom === "string" ? form.mailFrom.trim() : "";
+  const key = typeof form.resendApiKey === "string" ? form.resendApiKey.trim() : "";
+  if (mailFrom && !SENDER.test(mailFrom)) return c.redirect(back("email_from", "#email"), 303);
+  if (key && !RESEND_KEY.test(key)) return c.redirect(back("email_key", "#email"), 303);
+  const saved = (await getMailSettings(c.env)) ?? {};
+  await putSetting(c.env, "mail", { ...saved, mailFrom: mailFrom || DEFAULT_MAIL_FROM, ...(key ? { resendApiKey: key } : {}) });
+  return c.redirect(back("email_saved", "#email"), 303);
 });

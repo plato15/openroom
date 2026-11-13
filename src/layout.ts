@@ -4,7 +4,7 @@ import { brand, googleFontsHref, themeVersion } from "./brand";
 import type { Session } from "./env";
 
 /** Bump when public/static/app.css or app.js change, so browsers fetch the new files. */
-const ASSET_VERSION = "8";
+const ASSET_VERSION = "16";
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -16,16 +16,18 @@ export function page(opts: {
   narrow?: boolean;
   /** Admin Preview: investor screens with a banner saying whose view this is. */
   preview?: { text: string; back: string };
+  /** First-time setup: no admin tabs, no footer, nothing but the step in hand. */
+  bare?: boolean;
 }) {
-  const { title, session, nav, body, narrow, preview } = opts;
+  const { title, session, nav, body, narrow, preview, bare } = opts;
   const b = brand();
   const adminNav =
-    session?.role === "admin" && !preview
+    session?.role === "admin" && !preview && !bare
       ? html`<nav class="tabs" aria-label="Admin">
           <a href="/admin" class="${nav === "documents" ? "on" : ""}">Documents</a>
           <a href="/admin/investors" class="${nav === "investors" ? "on" : ""}">Investors</a>
           <a href="/admin/activity" class="${nav === "activity" ? "on" : ""}">Activity</a>
-          <a href="/admin/branding" class="${nav === "branding" ? "on" : ""}">Branding</a>
+          <a href="/admin/branding" class="${nav === "branding" ? "on" : ""}">Settings</a>
         </nav>`
       : "";
   return html`<!doctype html>
@@ -48,7 +50,7 @@ export function page(opts: {
 <header class="bar">
   <div class="bar-in ${narrow ? "narrow" : ""}">
     <a href="/" class="brand" aria-label="${b.roomName} home">
-      <img src="${b.logo}" alt="${b.name}" height="22">
+      ${b.logo ? html`<img src="${b.logo}" alt="${b.name}" height="22">` : html`<span class="brand-name">${b.name}</span>`}
       <span class="brand-tag">Data room</span>
     </a>
     ${session
@@ -67,9 +69,9 @@ ${preview
     </div></div>`
   : ""}
 <main class="wrap ${narrow ? "narrow" : ""}">${body}</main>
-<footer class="foot wrap ${narrow ? "narrow" : ""}">${b.legalSentence} Confidential. Shared for due diligence only.${b.credit
+${bare ? "" : html`<footer class="foot wrap ${narrow ? "narrow" : ""}">${b.legalSentence} Confidential. Shared for due diligence only.${b.credit
   ? html`<span class="credit">Powered by <a href="https://github.com/plato15/openroom" rel="noopener">Openroom</a>.</span>`
-  : ""}</footer>
+  : ""}</footer>`}
 </body>
 </html>`;
 }
