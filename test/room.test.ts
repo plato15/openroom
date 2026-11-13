@@ -928,13 +928,40 @@ describe("subfolders, templates and placeholders", () => {
     expect((await req(`/d/${ph}`, { cookie })).status).toBe(200);
   });
 
-  it("does not delete a folder that still has subfolders", async () => {
+  it("asks before deleting a folder, then deletes it with everything in it", async () => {
     const admin = await adminSession();
     const top = await addFolder();
-    await addSubfolder(top);
-    const res = await req(`/admin/folders/${top}/delete`, { cookie: admin, form: {} });
-    expect(res.headers.get("location")).toContain("m=folder_not_empty");
+    const sub = await addSubfolder(top);
+    const inTop = await addFile(top, { name: "Top.pdf" });
+    const inSub = await addFile(sub, { name: "Sub.pdf", published: false });
+    const inv = await addInvestor({ folders: [top] });
+
+    // Without the confirmation step nothing happens: it goes to the "Are you sure?" page.
+    const blind = await req(`/admin/folders/${top}/delete`, { cookie: admin, form: {} });
+    expect(blind.headers.get("location")).toBe(`/admin/folders/${top}/delete`);
+    const ask = await (await req(`/admin/folders/${top}/delete`, { cookie: admin })).text();
+    expect(ask).toContain("1 subfolder");
+    expect(ask).toContain("2 documents (1 visible to investors)");
+    expect(ask).toContain("access for 1 investor");
+    expect(ask).toContain("This cannot be undone");
     expect(await env.DB.prepare("SELECT 1 FROM folders WHERE id = ?").bind(top).first()).toBeTruthy();
+
+    // Investors can do neither.
+    const invCookie = await signIn(inv.email);
+    expect((await req(`/admin/folders/${top}/delete`, { cookie: invCookie, form: { confirm: "delete" } })).status).toBe(404);
+
+    const res = await req(`/admin/folders/${top}/delete`, { cookie: admin, form: { confirm: "delete" } });
+    expect(res.headers.get("location")).toContain("m=folder_deleted");
+    const left = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM folders WHERE id IN (?1, ?2)) + (SELECT COUNT(*) FROM files WHERE id IN (?3, ?4))
+            + (SELECT COUNT(*) FROM grants WHERE folder_id = ?1) AS n`,
+    )
+      .bind(top, sub, inTop, inSub)
+      .first<{ n: number }>();
+    expect(left!.n).toBe(0);
+    expect(await env.FILES.get(`files/${inTop}`)).toBeNull();
+    expect(await env.FILES.get(`files/${inSub}`)).toBeNull();
+    expect((await req(`/d/${inTop}`, { cookie: invCookie })).status).toBe(404);
   });
 
   it("adds a template's folders, subfolders and valid hidden placeholders", async () => {

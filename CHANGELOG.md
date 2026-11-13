@@ -7,6 +7,7 @@ Every change people running a room should know about. Newest first. Versions fol
 ### Added
 - **Templates.** Setup asks what the room is for (Investor data room, Selling the company, Board portal, Client or partner portal, or empty) and creates the folders. Also on the Documents page as **Start from a template**.
 - **Subfolders,** one level deep. Investors get a folder's subfolders with it. Empty subfolders stay out of the investor's view.
+- **Delete a folder with everything in it,** after an "Are you sure?" page that lists what goes (subfolders, documents, placeholders, investor access). Works for subfolders too.
 - **Short links** for files and folders: `/deck`, `/legal`, with Copy link. People who are not signed in land on the link after signing in. Old `/d/...` links keep working.
 - **Placeholders.** Template subfolders hold a hidden one-page placeholder ("Pitch deck"). **Upload your version** replaces it in place and makes it visible. Placeholders are never shown to investors.
 - **First-time setup screen.** Nothing to fill in while deploying: the first time the room is opened, the founder enters their email and a Resend key, types the 6-digit code emailed to them (which makes them the owner), then sets the company name, colours and logo. Rooms deployed with `ADMIN_EMAILS` skip it.

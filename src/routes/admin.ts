@@ -44,7 +44,7 @@ adminRoutes.route("/", brandingRoutes);
 const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
   folder_created: ["ok", "Folder created."],
   folder_saved: ["ok", "Folder saved."],
-  folder_deleted: ["ok", "Folder deleted."],
+  folder_deleted: ["ok", "Deleted."],
   folder_not_empty: ["error", "Move or delete the files and subfolders in this folder first."],
   subfolder_created: ["ok", "Subfolder added."],
   template_added: ["ok", "Folders added. Upload your own version over each placeholder marked To replace."],
@@ -262,9 +262,7 @@ adminRoutes.get("/admin", async (c) => {
                           <button class="btn small ghost" type="submit">Rename</button>
                         </form>
                         ${folderLinkForm(sub)}
-                        <form method="post" action="/admin/folders/${sub.id}/delete" data-confirm="Delete the subfolder ${sub.name}?">
-                          <button class="btn small danger wide" type="submit">Delete subfolder</button>
-                        </form>
+                        <a class="btn small danger wide" href="/admin/folders/${sub.id}/delete">Delete subfolder</a>
                       </div>
                     </details>
                     </span>
@@ -304,9 +302,7 @@ adminRoutes.get("/admin", async (c) => {
                       </div>
                     </form>
                     ${folderLinkForm(folder)}
-                    <form method="post" action="/admin/folders/${folder.id}/delete" data-confirm="Delete the folder ${folder.name}?" class="settings-delete">
-                      <button class="link-btn danger-text" type="submit">Delete folder</button>
-                    </form>
+                    <p class="settings-delete"><a class="link-btn danger-text" href="/admin/folders/${folder.id}/delete">Delete folder…</a></p>
                   </div>
                 </details>
               </div>
@@ -448,19 +444,80 @@ adminRoutes.post("/admin/folders/:id/link", async (c) => {
   return c.redirect(`/admin?m=slug_saved#${id}`, 303);
 });
 
+/** A folder with everything in it: its subfolders, and the files in both. */
+async function folderContents(c: Parameters<MiddlewareHandler<AppEnv>>[0], id: string) {
+  const folder = await c.env.DB.prepare("SELECT * FROM folders WHERE id = ?").bind(id).first<Folder>();
+  if (!folder) return null;
+  const subs = (await c.env.DB.prepare("SELECT * FROM folders WHERE parent_id = ?").bind(id).all<Folder>()).results;
+  const ids = [id, ...subs.map((s) => s.id)];
+  const files = (
+    await c.env.DB.prepare(`SELECT id, r2_key, published, placeholder FROM files WHERE folder_id IN (${ids.map(() => "?").join(",")})`)
+      .bind(...ids)
+      .all<{ id: string; r2_key: string; published: number; placeholder: number }>()
+  ).results;
+  const people = folder.parent_id
+    ? 0
+    : ((await c.env.DB.prepare("SELECT COUNT(*) AS n FROM grants WHERE folder_id = ?").bind(id).first<{ n: number }>())?.n ?? 0);
+  return { folder, subs, ids, files, people };
+}
+
+/** "Are you sure?": says exactly what goes, works without JavaScript. */
+adminRoutes.get("/admin/folders/:id/delete", async (c) => {
+  const found = await folderContents(c, c.req.param("id"));
+  if (!found) return c.redirect("/admin", 303);
+  const { folder, subs, files, people } = found;
+  const real = files.filter((f) => !f.placeholder);
+  const visible = real.filter((f) => f.published).length;
+  const placeholders = files.length - real.length;
+  const kind = folder.parent_id ? "subfolder" : "folder";
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const lines = [
+    subs.length ? plural(subs.length, "subfolder", "subfolders") : "",
+    real.length ? `${plural(real.length, "document", "documents")}${visible ? ` (${visible} visible to investors)` : ""}` : "",
+    placeholders ? plural(placeholders, "placeholder", "placeholders") : "",
+    people ? `access for ${plural(people, "investor", "investors")} to this folder` : "",
+  ].filter(Boolean);
+  return c.html(
+    page({
+      title: `Delete ${folder.name}`,
+      session: c.get("session"),
+      nav: "documents",
+      narrow: true,
+      body: html`<section class="card setup-card">
+          <h1 class="h2">Delete the ${kind} “${folder.name}”?</h1>
+          ${lines.length
+            ? html`<p>This also deletes everything in it:</p>
+                <ul class="delete-list">${lines.map((l) => html`<li>${l}</li>`)}</ul>`
+            : html`<p class="muted">It is empty.</p>`}
+          <p class="notice error">This cannot be undone. Deleted documents cannot be recovered. Past views and downloads stay in Activity.</p>
+          <form method="post" action="/admin/folders/${folder.id}/delete" class="row-between">
+            <input type="hidden" name="confirm" value="delete">
+            <a class="btn ghost" href="/admin#${folder.id}">Cancel</a>
+            <button class="btn danger" type="submit">Delete ${kind}${lines.length ? " and everything in it" : ""}</button>
+          </form>
+        </section>`,
+    }),
+  );
+});
+
 adminRoutes.post("/admin/folders/:id/delete", async (c) => {
   const id = c.req.param("id");
-  const count = await c.env.DB.prepare(
-    "SELECT (SELECT COUNT(*) FROM files WHERE folder_id = ?1) + (SELECT COUNT(*) FROM folders WHERE parent_id = ?1) AS n",
-  )
-    .bind(id)
-    .first<{ n: number }>();
-  if ((count?.n ?? 0) > 0) return c.redirect(`/admin?m=folder_not_empty#${id}`, 303);
+  const form = await c.req.parseBody();
+  // Only from the confirmation page above.
+  if (form.confirm !== "delete") return c.redirect(`/admin/folders/${id}/delete`, 303);
+  const found = await folderContents(c, id);
+  if (!found) return c.redirect("/admin", 303);
+  const { folder, ids, files } = found;
+  const keys = files.flatMap((f) => [f.r2_key, renderKey(f.id)]);
+  if (keys.length) await c.env.FILES.delete(keys);
+  const marks = ids.map(() => "?").join(",");
   await c.env.DB.batch([
-    c.env.DB.prepare("DELETE FROM grants WHERE folder_id = ?").bind(id),
+    c.env.DB.prepare(`DELETE FROM files WHERE folder_id IN (${marks})`).bind(...ids),
+    c.env.DB.prepare(`DELETE FROM grants WHERE folder_id IN (${marks})`).bind(...ids),
+    c.env.DB.prepare("DELETE FROM folders WHERE parent_id = ?").bind(id),
     c.env.DB.prepare("DELETE FROM folders WHERE id = ?").bind(id),
   ]);
-  return c.redirect("/admin?m=folder_deleted", 303);
+  return c.redirect(folder.parent_id ? `/admin?m=folder_deleted#${folder.parent_id}` : "/admin?m=folder_deleted", 303);
 });
 
 adminRoutes.post("/admin/folders/:id/upload", async (c) => {
