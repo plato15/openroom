@@ -1,0 +1,41 @@
+# Openroom on your own server, with automatic HTTPS from Caddy.
+#
+#   1. Point your domain (for example dataroom.example.com) at this server.
+#   2. cp .env.example .env, then fill it in.
+#   3. docker compose up -d
+#
+# Your database and files live in the openroom-data volume. Back it up.
+
+services:
+  openroom:
+    image: ghcr.io/plato15/openroom:latest
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      APP_ORIGIN: https://${DOMAIN}
+      # Caddy is the only way in, so the visitor address it passes on can be trusted.
+      TRUST_PROXY: "true"
+    volumes:
+      - openroom-data:/data
+    # No ports here on purpose: only Caddy talks to Openroom.
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [openroom]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  openroom-data:
+  caddy-data:
+  caddy-config:

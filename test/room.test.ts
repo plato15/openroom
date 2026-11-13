@@ -1,6 +1,7 @@
 // The same tests run against the Worker (vitest.config.ts) and the Node build (vitest.node.config.ts);
 // each config points "./harness" at its own runtime.
 import { env, fetchApp } from "./harness";
+import app from "../src/index";
 import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 import * as XLSX from "xlsx";
@@ -724,5 +725,19 @@ describe("branding tab", () => {
     expect(page).toContain("/static/logo-white.svg");
     expect((await req("/brand/header")).status).toBe(404);
     expect(await (await req("/theme.css")).text()).toContain("--blue:#2563EB");
+  });
+});
+
+describe("blank APP_ORIGIN (Cloudflare one-click deploys)", () => {
+  const ctx = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as ExecutionContext;
+  const post = (url: string, origin: string) =>
+    app.fetch(new Request(url, { method: "POST", headers: { origin }, body: new URLSearchParams({ email: "nobody@nowhere.test" }) }), { ...env, APP_ORIGIN: "" }, ctx);
+
+  it("uses the address the room was opened on, and still blocks other sites", async () => {
+    const own = "https://openroom.someone.workers.dev";
+    const res = await post(`${own}/login`, own);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("strict-transport-security")).toBeTruthy();
+    expect((await post(`${own}/login`, "https://evil.example")).status).toBe(403);
   });
 });
