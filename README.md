@@ -65,9 +65,38 @@ You need a free [GitHub](https://github.com) account, a free [Cloudflare](https:
 7. Click **Deploy**. Cloudflare creates the database and the private file bucket, sets up the tables and puts the room online.
 8. Open the `https://openroom.<your-name>.workers.dev` address it shows, enter your email, and click the link in your inbox. Then go to **Branding** to add your name, logo and colours.
 
-If Cloudflare says it **could not create the Git repository**: a repository with that project name already exists, or you picked a GitHub organisation that has not allowed Cloudflare to create repositories. Pick your personal account or another project name.
+Something went red in the form? See [If the button does not work](#if-the-button-does-not-work) just below: there is a route that always works.
 
 From then on, every push to your copy on GitHub redeploys the room and applies any new database changes.
+
+### If the button does not work
+
+The button has to create a new repository in your GitHub account, and that step fails when Cloudflare's GitHub connection on your account is old or tangled (common if your Cloudflare account already deploys other projects). You will see one of these in the form:
+
+- "Cloudflare could not create the Git repository right now"
+- "Your GitHub authorization has expired"
+- "An unknown error has occurred", or "Request timed out"
+- "A repository with that name already exists"
+
+Also check the **Git account** list: entries with an orange fox icon are **GitLab** groups, not GitHub. Pick a GitHub account (the black cat icon).
+
+If it still fails, copy Openroom yourself and point Cloudflare at the copy. About five minutes, still no command line:
+
+1. **Copy it.** On [github.com/plato15/openroom](https://github.com/plato15/openroom), click **Fork**, pick your account and click **Create fork**.
+2. **Connect it.** In the Cloudflare dashboard: **Workers & Pages → Create → Continue with GitHub**, pick your account and the `openroom` repository, then **Next**.
+3. **Settings on that page:**
+   - **Project name:** `openroom` (or anything).
+   - **Build command:** leave empty.
+   - **Deploy command:** `npm run deploy`
+   - **Enable Preview builds:** off.
+4. Click **Deploy**. The build log shows the database and file bucket being created and ends with your `https://openroom.<your-name>.workers.dev` address.
+5. **Add your two settings:** in the new Worker, **Settings → Variables and Secrets → Add**:
+   - `ADMIN_EMAILS`: your email, and tick **Secret**.
+   - `RESEND_API_KEY`: your Resend key, and tick **Secret**.
+   Then click **Add variables and deploy**.
+6. Open your address and sign in.
+
+To get new Openroom versions later, click **Sync fork** on your copy in GitHub; Cloudflare redeploys by itself.
 
 **Email.** Until you verify a domain, Resend only delivers to the email you signed up with, which is enough to sign in as admin. To email investors, add your domain in Resend (**Domains**, then the DNS records it shows), then add a variable `MAIL_FROM` with an address on it, like `Data Room <rooms@acme.com>`, in the Cloudflare dashboard under **Workers & Pages → openroom → Settings → Variables and Secrets**. Settings added there stay through every later update. Prefer Amazon SES? Add the secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` (an IAM user allowed only `ses:SendEmail`), set `SES_REGION`, and leave `RESEND_API_KEY` empty.
 
@@ -80,19 +109,18 @@ From then on, every push to your copy on GitHub redeploys the room and applies a
 <details>
 <summary>Deploying from the command line instead</summary>
 
-You need Node 22.12 or newer.
+You need Node 22.12 or newer: check with `node -v`. Wrangler stops with "Wrangler requires at least Node.js v22.12.0" on older versions; install a newer Node from [nodejs.org](https://nodejs.org) first.
 
 ```bash
 git clone https://github.com/plato15/openroom.git && cd openroom
 npm install
 npx wrangler login
-npx wrangler secret put ADMIN_EMAILS
-npx wrangler secret put RESEND_API_KEY
-npx wrangler deploy      # first time: creates the database and bucket
-npm run deploy           # applies database changes, then deploys
+npm run deploy                           # creates the database and bucket, deploys, sets up the tables
+npx wrangler secret put ADMIN_EMAILS     # type your email
+npx wrangler secret put RESEND_API_KEY   # paste your Resend key
 ```
 
-Use `npm run deploy` for every later update.
+If it asks whether to create a database or bucket, or which account to use, accept the defaults. Use `npm run deploy` again for every later update.
 </details>
 
 ## Run with Docker
@@ -164,7 +192,7 @@ Every setting, in one place. Only the ones marked **Yes** are needed; everything
 
 ## Updating
 
-- **Cloudflare (button):** your copy on GitHub is yours. To get new Openroom versions, open it on GitHub and click **Sync fork** (or merge from `plato15/openroom`). Cloudflare redeploys and applies database changes by itself.
+- **Cloudflare (button or fork):** your copy on GitHub is yours. To get new Openroom versions, open it on GitHub and click **Sync fork** (or merge from `plato15/openroom`). Cloudflare redeploys and applies database changes by itself.
 - **Cloudflare (command line):** `git pull && npm install && npm run deploy`.
 - **Docker:** `docker compose pull && docker compose up -d`. Database changes apply when the container starts.
 
@@ -186,6 +214,9 @@ Read [CHANGELOG.md](CHANGELOG.md) first: anything you need to do by hand is list
 | Docker: Caddy cannot get a certificate | The domain's DNS must point at the server, and ports 80 and 443 must be open. |
 | Cloudflare: a big PDF does not open (error 1102 or "exceeded CPU") | You are on the free Workers plan. Move to Workers Paid ($5 a month). |
 | The Branding change does not show | Reload the page. Other Cloudflare locations pick it up within 10 seconds. |
+| Deploy button: "could not create the Git repository", "authorization has expired", "unknown error" or "Request timed out" | Cloudflare's GitHub connection on your account. Use [the fork route](#if-the-button-does-not-work). |
+| Cloudflare build log: the first build fails at the database migrations step | The deploy command tried to set up the tables before the first deploy had created the database. Use `npm run deploy` as the deploy command (it deploys first), and run the build again. |
+| "Wrangler requires at least Node.js v22.12.0" | Your computer's Node is too old. Install Node 22 or newer from [nodejs.org](https://nodejs.org). |
 
 ## What opens in the browser
 

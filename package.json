@@ -6,7 +6,7 @@
     "test:workers": "vitest run",
     "test:node": "vitest run --config vitest.node.config.ts",
     "dev": "wrangler dev --port 8799 --infer-origin-from-routes=false --var ENVIRONMENT:local --var APP_ORIGIN:http://localhost:8799",
-    "deploy": "wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy": "wrangler deploy && wrangler d1 migrations apply DB --remote",
     "typecheck": "tsc -p .",
     "db:migrate": "wrangler d1 migrations apply DB --remote",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",

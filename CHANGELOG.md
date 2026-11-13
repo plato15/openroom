@@ -4,6 +4,12 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+### Changed
+- `npm run deploy` now deploys first and then applies database migrations, so it also works on a brand new setup (the database is created by the first deploy).
+
+### Docs
+- README: a route that always works when the Deploy button cannot create a repository (fork, then connect it in Cloudflare), with each error message people may see and its fix, and the Node 22 requirement for the command line.
+
 ## 0.2.0 (13 Nov 2026)
 
 ### Changed

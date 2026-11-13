@@ -11,11 +11,14 @@ Ask the person which they want, then follow one path. Do not invent settings tha
 ```bash
 git clone https://github.com/plato15/openroom.git && cd openroom
 npm install
+npm run deploy                           # deploys (creating D1 + R2 the first time), then applies migrations
 npx wrangler secret put ADMIN_EMAILS     # their email, comma separated for several
 npx wrangler secret put RESEND_API_KEY   # from resend.com → API Keys
-npx wrangler deploy                      # first deploy: creates the D1 database and R2 bucket
-npm run deploy                           # applies migrations, then deploys; use this every time after
 ```
+
+- Node 22.12+ is required (`node -v`). On a Mac with Homebrew, a newer Node may be installed but not first on PATH.
+- If the Deploy button fails ("could not create the Git repository", "authorization has expired", "unknown error", timeout), use the fork route in the README ("If the button does not work"): fork, Cloudflare **Create → Continue with GitHub**, deploy command `npm run deploy`, preview builds off, then add the two secrets in **Settings → Variables and Secrets**. Do not uninstall the Cloudflare GitHub app on an account that other projects build from.
+- Migrations must run **after** `wrangler deploy` on a fresh setup: the database does not exist until the first deploy provisions it. `npm run deploy` already does it in that order.
 
 - Leave `APP_ORIGIN` unset unless they add a custom domain; then add it in the dashboard as `https://<domain>`.
 - In the Deploy button form, the Git account should be their personal GitHub account; "could not create the Git repository" means the name is taken or the organisation blocks Cloudflare.
