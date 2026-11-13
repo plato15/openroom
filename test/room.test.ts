@@ -745,3 +745,96 @@ describe("blank APP_ORIGIN (Cloudflare one-click deploys)", () => {
     expect((await post(`${own}/login`, "https://evil.example")).status).toBe(403);
   });
 });
+
+describe("first-time setup", () => {
+  const ctx = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as ExecutionContext;
+  /** The same room with no ADMIN_EMAILS: a brand new deployment from the Deploy button. */
+  const fresh = (path: string, opts: Opts = {}) => {
+    const headers = new Headers();
+    if (opts.cookie) headers.set("cookie", opts.cookie);
+    const method = opts.method ?? (opts.form ? "POST" : "GET");
+    if (method !== "GET") headers.set("origin", ORIGIN);
+    let body: BodyInit | undefined;
+    if (opts.form instanceof FormData) body = opts.form;
+    else if (opts.form) body = new URLSearchParams(opts.form as Record<string, string>);
+    return app.fetch(new Request(ORIGIN + path, { method, headers, body, redirect: "manual" }), { ...env, ADMIN_EMAILS: "" }, ctx);
+  };
+  const FOUNDER = "founder@startup.test";
+  const KEY = "re_test_1234567890abcdef";
+  const codeFor = async (email: string) => {
+    const mails = (await (await req("/__test/outbox")).json()) as { to: string; subject: string }[];
+    return mails.filter((m) => m.to === email && m.subject.startsWith("Your setup code")).pop()?.subject.match(/\d{6}/)?.[0];
+  };
+
+  it("never shows on a room deployed with ADMIN_EMAILS", async () => {
+    expect((await req("/setup")).headers.get("location")).toBe("/");
+    const res = await req("/setup/start", { form: { email: "attacker@evil.test", resendApiKey: KEY } });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/");
+    expect(await codeFor("attacker@evil.test")).toBeUndefined();
+  });
+
+  it("sends a brand new room to setup, and checks the email and key", async () => {
+    expect((await fresh("/")).headers.get("location")).toBe("/setup");
+    expect((await fresh("/admin")).headers.get("location")).toBe("/setup");
+    expect((await fresh("/login", { form: { email: FOUNDER } })).status).toBe(404);
+    expect((await fresh("/theme.css")).status).toBe(200);
+    expect(await (await fresh("/setup")).text()).toContain("Set up your data room");
+    expect((await fresh("/setup/start", { form: { email: "nope", resendApiKey: KEY } })).status).toBe(400);
+    expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: "sk_live_123" } })).status).toBe(400);
+    expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY, mailFrom: "x\r\nBcc: a@b.c" } })).status).toBe(400);
+    expect((await fresh("/setup/brand")).headers.get("location")).toBe("/"); // and "/" leads to /setup
+  });
+
+  it("throws a code away after five wrong tries", async () => {
+    const start = await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY } });
+    expect(start.status).toBe(200);
+    const code = await codeFor(FOUNDER);
+    expect(code).toMatch(/^\d{6}$/);
+    const wrong = code === "000000" ? "111111" : "000000";
+    for (let i = 1; i <= 4; i++) {
+      const res = await fresh("/setup/verify", { form: { code: wrong } });
+      expect(await res.text()).toContain(`${5 - i} tries left`);
+    }
+    expect(await (await fresh("/setup/verify", { form: { code: wrong } })).text()).toContain("Too many wrong codes");
+    const late = await fresh("/setup/verify", { form: { code: code! } });
+    expect(late.status).toBe(400);
+    expect(late.headers.get("set-cookie")).toBeNull();
+  });
+
+  it("makes the first verified visitor the owner, exactly once", async () => {
+    await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY } });
+    const res = await fresh("/setup/verify", { form: { code: (await codeFor(FOUNDER))! } });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/setup/brand");
+    const cookie = res.headers.get("set-cookie")!.split(";")[0];
+
+    // Step 2 and 3.
+    expect((await fresh("/setup/brand", { cookie })).status).toBe(200);
+    expect((await fresh("/setup/brand", { cookie, form: { name: "<b>x</b>" } })).status).toBe(400);
+    const fd = new FormData();
+    fd.append("name", "Founder Co");
+    fd.append("color", "#0e9f6e");
+    fd.append("dark", "#1b2a41");
+    expect((await fresh("/setup/brand", { cookie, form: fd })).headers.get("location")).toBe("/setup/done");
+    expect(await (await fresh("/setup/done", { cookie })).text()).toContain("Your data room is ready");
+    expect((await fresh("/admin", { cookie })).status).toBe(200);
+    expect(await (await fresh("/")).text()).toContain("Founder Co data room");
+
+    // The key is saved for sign-in emails; nobody else can claim the room now.
+    const mail = await env.DB.prepare("SELECT value FROM settings WHERE key = 'mail'").first<{ value: string }>();
+    expect(JSON.parse(mail!.value).resendApiKey).toBe(KEY);
+    expect((await fresh("/setup")).headers.get("location")).toBe("/");
+    const again = await fresh("/setup/start", { form: { email: "late@evil.test", resendApiKey: KEY } });
+    expect(again.headers.get("location")).toBe("/");
+    expect(await codeFor("late@evil.test")).toBeUndefined();
+
+    // The owner signs in later like any admin.
+    await fresh("/login", { form: { email: FOUNDER } });
+    const mails = (await (await req("/__test/outbox")).json()) as { to: string; link?: string }[];
+    expect(mails.some((m) => m.to === FOUNDER && m.link)).toBe(true);
+
+    // Leave the shared room's branding as the other tests expect it.
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'brand'").run();
+  });
+});

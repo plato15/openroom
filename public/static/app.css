@@ -62,7 +62,7 @@ img { max-width: 100%; }
 /* Forms */
 .stack { display: grid; gap: 14px; }
 label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; color: var(--navy); }
-input[type=email], input[type=text], input:not([type]), input[type=date], input[type=number], select {
+input[type=email], input[type=text], input[type=password], input:not([type]), input[type=date], input[type=number], select {
   width: 100%; font: 16px var(--font); color: var(--text); background: #fff; border: 1px solid #cdd5e1; border-radius: 10px; padding: 12px 14px; min-height: 46px;
 }
 input:focus, select:focus { outline: 3px solid rgba(30,151,241,.25); border-color: var(--blue); }
@@ -264,3 +264,12 @@ a.link-btn { text-decoration: none; }
 .hint { font-weight: 400; }
 /* Four admin tabs fit on a phone without scrolling. */
 @media (max-width: 420px) { .tabs { gap: 0; } .tabs a { padding: 10px 10px; font-size: 13px; } }
+.brand-name { color: #fff; font-family: var(--display); font-weight: 700; font-size: 18px; line-height: 22px; }
+
+/* First-time setup */
+.steps { display: flex; gap: 6px; margin: 0 0 14px; }
+.steps span { flex: 1; height: 4px; border-radius: 4px; background: var(--line); }
+.steps span.on { background: var(--blue); }
+.code-input { font-size: 28px !important; letter-spacing: .4em; text-align: center; font-variant-numeric: tabular-nums; }
+.setup-done li { margin: 0 0 10px; }
+.hint { font-weight: 400; }

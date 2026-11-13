@@ -4,7 +4,7 @@ import { brand, googleFontsHref, themeVersion } from "./brand";
 import type { Session } from "./env";
 
 /** Bump when public/static/app.css or app.js change, so browsers fetch the new files. */
-const ASSET_VERSION = "8";
+const ASSET_VERSION = "10";
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -25,7 +25,7 @@ export function page(opts: {
           <a href="/admin" class="${nav === "documents" ? "on" : ""}">Documents</a>
           <a href="/admin/investors" class="${nav === "investors" ? "on" : ""}">Investors</a>
           <a href="/admin/activity" class="${nav === "activity" ? "on" : ""}">Activity</a>
-          <a href="/admin/branding" class="${nav === "branding" ? "on" : ""}">Branding</a>
+          <a href="/admin/branding" class="${nav === "branding" ? "on" : ""}">Settings</a>
         </nav>`
       : "";
   return html`<!doctype html>
@@ -48,7 +48,7 @@ export function page(opts: {
 <header class="bar">
   <div class="bar-in ${narrow ? "narrow" : ""}">
     <a href="/" class="brand" aria-label="${b.roomName} home">
-      <img src="${b.logo}" alt="${b.name}" height="22">
+      ${b.logo ? html`<img src="${b.logo}" alt="${b.name}" height="22">` : html`<span class="brand-name">${b.name}</span>`}
       <span class="brand-tag">Data room</span>
     </a>
     ${session

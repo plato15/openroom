@@ -52,15 +52,5 @@
     "r2",
     "docker",
     "self-hosted"
-  ],
-  "cloudflare": {
-    "bindings": {
-      "ADMIN_EMAILS": {
-        "description": "Your email (the one you signed up to Resend with). You sign in with a link sent to it. Add more, separated by commas, for anyone else who manages the room. What you type is hidden because Cloudflare stores it as a secret; that keeps it safe through every update."
-      },
-      "RESEND_API_KEY": {
-        "description": "Sends the sign-in emails. Make a free account at [resend.com](https://resend.com), then copy a key from **API Keys**. Use the email you signed up to Resend with as your admin email above."
-      }
-    }
-  }
+  ]
 }

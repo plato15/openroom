@@ -18,9 +18,9 @@
   "assets": { "directory": "./public", "binding": "ASSETS" },
   "d1_databases": [{ "binding": "DB", "database_name": "openroom", "migrations_dir": "migrations" }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "openroom-files" }],
-  // No settings here on purpose: the Deploy to Cloudflare form only asks for what it must
-  // (ADMIN_EMAILS and RESEND_API_KEY, from .dev.vars.example). Everything else has a sensible
-  // default in the code, and branding is set in the app on the Branding tab.
+  // No settings here on purpose: every var here becomes a required field in the Deploy to
+  // Cloudflare form. Nothing is needed: the first time the room is opened, a setup screen asks
+  // the founder for their email and a Resend key, then their name, colours and logo.
   //
   // Optional settings, added later in the Cloudflare dashboard (Workers & Pages > openroom >
   // Settings > Variables and Secrets), all listed in the README under "All settings":
@@ -30,7 +30,7 @@
   //
   // keep_vars: settings added in the dashboard survive every later deploy.
   "keep_vars": true,
-  // Secrets (set with `npx wrangler secret put NAME` or in the dashboard):
-  //   ADMIN_EMAILS, RESEND_API_KEY, or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY for SES.
+  // Optional secrets (`npx wrangler secret put NAME` or the dashboard), which win over the setup
+  // screen: ADMIN_EMAILS, RESEND_API_KEY, or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY for SES.
   "observability": { "enabled": true }
 }

@@ -20,8 +20,8 @@ export type Brand = {
   fontBody: string;
   fontDisplay: string;
   credit: boolean; // "Powered by Openroom" in the footer
-  /** Header logo, shown on the dark header bar. */
-  logo: string;
+  /** Header logo, shown on the dark header bar, or null to show the name as text. */
+  logo: string | null;
   /** Path of the email logo (PNG or JPEG), or null to print the name instead. */
   emailLogo: string | null;
   icon: string;
@@ -81,6 +81,9 @@ export function brandFrom(env: Env, saved: BrandSettings = {}): Brand {
     host = "";
   }
   const logos = saved.logos ?? {};
+  // Openroom's own logos only stand in while the room still carries the Openroom name; a room
+  // renamed without a logo shows its name as text rather than someone else's logo.
+  const ownName = name !== "Openroom";
   const logoUrl = (slot: LogoSlot) => (logos[slot] ? `/brand/${slot}?v=${logos[slot]!.v}` : DEFAULT_LOGOS[slot]);
   const emailType = logos.email?.type;
   const legalName = pick(TEXT, saved.legalName, env.BRAND_LEGAL_NAME) ?? name;
@@ -97,9 +100,9 @@ export function brandFrom(env: Env, saved: BrandSettings = {}): Brand {
     fontBody,
     fontDisplay: pick(FONT, saved.fontDisplay, env.BRAND_FONT_DISPLAY) ?? fontBody,
     credit: env.SHOW_CREDIT !== "false",
-    logo: logoUrl("header"),
+    logo: logos.header || !ownName ? logoUrl("header") : null,
     // Email clients do not show SVG or WebP, so only a PNG or JPEG upload is used in emails.
-    emailLogo: !emailType ? DEFAULT_LOGOS.email : emailType === "image/png" || emailType === "image/jpeg" ? logoUrl("email") : null,
+    emailLogo: !emailType ? (ownName ? null : DEFAULT_LOGOS.email) : emailType === "image/png" || emailType === "image/jpeg" ? logoUrl("email") : null,
     icon: logoUrl("icon"),
     iconType: logos.icon?.type ?? "image/svg+xml",
   };

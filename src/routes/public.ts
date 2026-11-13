@@ -53,7 +53,7 @@ publicRoutes.post("/login", async (c) => {
 
   // Same answer whether or not the email is invited, so the page never reveals who is.
   let devLink: string | null = null;
-  const eligible = isAdmin(c.env, email) || !!(await activeInvestor(c.env, email));
+  const eligible = (await isAdmin(c.env, email)) || !!(await activeInvestor(c.env, email));
   if (eligible && (await recentLoginRequests(c.env, email)) < LOGIN_REQUESTS_PER_15_MIN) {
     const token = await createLoginToken(c.env, email);
     const link = `${c.env.APP_ORIGIN}/auth?t=${encodeURIComponent(token)}`;
@@ -130,7 +130,7 @@ publicRoutes.post("/auth", async (c) => {
   const email = token ? await consumeLoginToken(c.env, token) : null;
   if (!email) return c.html(expiredPage(), 400);
 
-  if (isAdmin(c.env, email)) {
+  if (await isAdmin(c.env, email)) {
     await startSession(c, email, "admin");
     await logEvent(c, { email, action: "sign_in" });
     return c.redirect("/admin", 303);

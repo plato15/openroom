@@ -1,6 +1,6 @@
-# The two things the Deploy to Cloudflare form asks for (left empty so nothing fake gets deployed).
-# For local dev, copy this file to .dev.vars and put your email in ADMIN_EMAILS; no key is needed locally.
-# Your email; several are separated by commas.
-ADMIN_EMAILS=
-# From resend.com → API Keys.
-RESEND_API_KEY=
+# Nothing is needed to deploy: open the room once it is live and the setup screen asks for
+# your email and a Resend key. Everything below is optional.
+#
+# For local dev, copy this file to .dev.vars. Leave ADMIN_EMAILS out to try the setup screen
+# (the code is shown on the page locally), or set it to sign straight in as admin.
+# ADMIN_EMAILS=you@example.com

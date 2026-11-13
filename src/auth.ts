@@ -1,7 +1,8 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { AppEnv, Env, Investor, Session } from "./env";
-import { adminEmails, now, randomId, sha256 } from "./util";
+import { isAdmin } from "./settings";
+import { now, randomId, sha256 } from "./util";
 
 export const LOGIN_TTL = 15 * 60 * 1000;
 const ADMIN_SESSION_TTL = 12 * 60 * 60 * 1000;
@@ -11,7 +12,8 @@ export const LOGIN_REQUESTS_PER_15_MIN = 5;
 const secureOrigin = (env: Env) => env.APP_ORIGIN.startsWith("https://");
 const cookieName = (env: Env) => (secureOrigin(env) ? "__Host-dataroom" : "dataroom");
 
-export const isAdmin = (env: Env, email: string) => adminEmails(env.ADMIN_EMAILS).has(email.toLowerCase());
+/** ADMIN_EMAILS plus the owner who claimed the room on the setup screen (see src/settings.ts). */
+export { isAdmin } from "./settings";
 
 /** An investor who may use the room right now: invited, not revoked, not past their end date. */
 export async function activeInvestor(env: Env, email: string): Promise<Investor | null> {
@@ -90,7 +92,7 @@ export const loadSession: MiddlewareHandler<AppEnv> = async (c, next) => {
       .bind(await sha256(id), now())
       .first<{ email: string; role: "admin" | "investor" }>();
     let session: Session | null = null;
-    if (row?.role === "admin" && isAdmin(c.env, row.email)) session = { role: "admin", email: row.email };
+    if (row?.role === "admin" && (await isAdmin(c.env, row.email))) session = { role: "admin", email: row.email };
     if (row?.role === "investor") {
       const investor = await activeInvestor(c.env, row.email);
       if (investor) session = { role: "investor", email: row.email, investor };

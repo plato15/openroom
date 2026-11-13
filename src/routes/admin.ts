@@ -630,7 +630,7 @@ adminRoutes.post("/admin/investors", async (c) => {
   const form = await c.req.parseBody({ all: true });
   const email = normalizeEmail(form.email);
   if (!email) return c.redirect("/admin/investors?m=investor_email", 303);
-  if (isAdmin(c.env, email)) return c.redirect("/admin/investors?m=investor_is_admin", 303);
+  if (await isAdmin(c.env, email)) return c.redirect("/admin/investors?m=investor_is_admin", 303);
   const exists = await c.env.DB.prepare("SELECT id FROM investors WHERE email = ?").bind(email).first();
   if (exists) return c.redirect("/admin/investors?m=investor_exists", 303);
 

@@ -4,6 +4,18 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+### Added
+- **First-time setup screen.** Nothing to fill in while deploying: the first time the room is opened, the founder enters their email and a Resend key, types the 6-digit code emailed to them (which makes them the owner), then sets the company name, colours and logo. Rooms deployed with `ADMIN_EMAILS` skip it.
+- **Settings → Email:** change the sender and Resend key in the app, for example after verifying your domain in Resend.
+- A room renamed without a logo shows its name in the header and emails instead of the Openroom logo.
+
+### Changed
+- The Deploy to Cloudflare form asks nothing. `ADMIN_EMAILS` and `RESEND_API_KEY` are optional everywhere, including Docker.
+- The Branding tab is now called Settings.
+
+### Upgrading
+- Rooms that already have `ADMIN_EMAILS` set keep working as before and never see the setup screen.
+
 ### Changed
 - `npm run deploy` now deploys first and then applies database migrations, so it also works on a brand new setup (the database is created by the first deploy).
 
