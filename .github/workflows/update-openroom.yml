@@ -1,0 +1,37 @@
+name: Update Openroom
+# Brings your room up to the newest Openroom release.
+# Run it: Actions tab > Update Openroom > Run workflow. Cloudflare then redeploys by itself,
+# and your documents, investors and settings stay as they are.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to update to, like v0.4.0 (leave empty for the newest)"
+        required: false
+        default: ""
+  # To update automatically every Monday morning, remove the # from the next two lines.
+  # schedule:
+  #   - cron: "0 6 * * 1"
+permissions:
+  contents: write
+jobs:
+  update:
+    # Only in your copy, never in Openroom itself.
+    if: github.repository != 'plato15/openroom'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Update
+        env:
+          WANT: ${{ inputs.version }}
+        run: |
+          git config user.name "Openroom updater"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash scripts/update-openroom.sh "${WANT:-latest}"
+      - name: Push
+        run: git push origin HEAD

@@ -4,6 +4,16 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+### Added
+- **"Openroom X is available"** for admins on the Documents and Settings pages, from a daily check of Openroom's public releases on GitHub (`UPDATE_CHECK=false` turns it off). Settings shows the current version.
+- **Update Openroom**, a one-click update from the Actions tab of your copy on GitHub. Works for forks and for copies made by the Deploy button, keeps your Worker name, database, bucket and domains, and stops without changing anything if it cannot update safely. Optional weekly schedule.
+
+### Changed
+- The release workflow only runs in Openroom itself, never in a room's copy.
+
+### Upgrading
+- Rooms on 0.3.0 get the Update Openroom button with this update, done the old way once (see README, "Updating").
+
 ## 0.3.0 (13 Nov 2026)
 
 ### Added

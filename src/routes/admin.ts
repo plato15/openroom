@@ -6,7 +6,7 @@ import { brandingRoutes } from "./branding";
 import { isAdmin } from "../auth";
 import { inviteMail, sendMail } from "../email";
 import type { AppEnv, FileRow, Folder, Investor } from "../env";
-import { messagePage, notice, page } from "../layout";
+import { messagePage, notice, page, updateNotice } from "../layout";
 import {
   dateInputValue,
   fileKind,
@@ -26,6 +26,8 @@ import {
 } from "../util";
 import { canWatermark, orientationOf } from "../watermark";
 import { checkLink } from "../links";
+import { availableUpdate } from "../updates";
+import { VERSION } from "../version";
 
 export const adminRoutes = new Hono<AppEnv>();
 const MAX_UPLOAD = 50 * 1024 * 1024;
@@ -153,6 +155,7 @@ function downloadSwitch(file: FileRow, back?: "file") {
 
 adminRoutes.get("/admin", async (c) => {
   const db = c.env.DB;
+  const update = await availableUpdate(c.env, (p) => c.executionCtx.waitUntil(p));
   const [folders, files, grants, stats] = await Promise.all([
     db.prepare("SELECT * FROM folders ORDER BY position, name COLLATE NOCASE").all<Folder>(),
     db.prepare("SELECT * FROM files ORDER BY name COLLATE NOCASE").all<FileRow>(),
@@ -178,7 +181,7 @@ adminRoutes.get("/admin", async (c) => {
       title: "Documents",
       session: c.get("session"),
       nav: "documents",
-      body: html`${flash(c)}
+      body: html`${updateNotice(update, VERSION)}${flash(c)}
         <section class="row-between">
           <div>
             <h1 class="h2">Documents</h1>

@@ -9,7 +9,7 @@ export type NodeSettings = Record<string, string | undefined>;
 const PASS_THROUGH = [
   "ENVIRONMENT", "APP_ORIGIN", "ADMIN_EMAILS", "MAIL_FROM", "MAIL_PROVIDER", "RESEND_API_KEY", "SMTP_URL",
   "SES_REGION", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "BRAND_NAME", "BRAND_LEGAL_NAME", "BRAND_INVITER",
-  "BRAND_COLOR", "BRAND_DARK", "BRAND_FONT_BODY", "BRAND_FONT_DISPLAY", "SHOW_CREDIT",
+  "BRAND_COLOR", "BRAND_DARK", "BRAND_FONT_BODY", "BRAND_FONT_DISPLAY", "SHOW_CREDIT", "UPDATE_CHECK",
 ] as const;
 
 export function bucketFrom(s: NodeSettings, dataDir: string): Bucket {

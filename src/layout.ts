@@ -4,7 +4,7 @@ import { brand, googleFontsHref, themeVersion } from "./brand";
 import type { Session } from "./env";
 
 /** Bump when public/static/app.css or app.js change, so browsers fetch the new files. */
-const ASSET_VERSION = "16";
+const ASSET_VERSION = "17";
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -74,6 +74,15 @@ ${bare ? "" : html`<footer class="foot wrap ${narrow ? "narrow" : ""}">${b.legal
   : ""}</footer>`}
 </body>
 </html>`;
+}
+
+/** For admins: a newer Openroom release exists. Links to its notes and to the update steps. */
+export function updateNotice(u: { latest: string; url: string } | null, current: string) {
+  if (!u) return "";
+  return html`<div class="notice update" role="status">
+    <span><strong>Openroom ${u.latest} is available.</strong> You are on ${current}.</span>
+    <span class="update-links"><a href="${u.url}" target="_blank" rel="noopener">What's new</a><a href="https://github.com/plato15/openroom#updating" target="_blank" rel="noopener">How to update</a></span>
+  </div>`;
 }
 
 export function notice(kind: "ok" | "error" | "info", text: string | null | undefined) {

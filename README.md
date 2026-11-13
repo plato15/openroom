@@ -180,6 +180,7 @@ Every setting, in one place. **None of them are needed:** the setup screen asks 
 | `MAIL_PROVIDER` | No | Both | Force `resend`, `smtp` or `ses`. Otherwise the first one with its keys set is used, in that order. |
 | `BRAND_NAME`, `BRAND_LEGAL_NAME`, `BRAND_INVITER`, `BRAND_COLOR`, `BRAND_DARK`, `BRAND_FONT_BODY`, `BRAND_FONT_DISPLAY` | No | Both | Default branding (see [Make it yours](#make-it-yours)). The Settings tab overrides them. |
 | `SHOW_CREDIT` | No | Both | `"false"` hides "Powered by Openroom". |
+| `UPDATE_CHECK` | No | Both | `"false"` stops the daily check for a newer Openroom release (see [Updating](#updating)). |
 | `ENVIRONMENT` | No | Both | `production` (default). `local` only for development: on a local address it shows sign-in links on the page instead of emailing them. |
 | `DOMAIN` | Yes, with Docker compose | Docker (`docker-compose.yml`) | Your domain without `https://`. Compose builds `APP_ORIGIN` from it. |
 | `DATA_DIR` | No | Docker only | Where the database and files are kept. Default `/data` (the `openroom-data` volume). |
@@ -189,11 +190,27 @@ Every setting, in one place. **None of them are needed:** the setup screen asks 
 
 ## Updating
 
-- **Cloudflare (button or fork):** your copy on GitHub is yours. To get new Openroom versions, open it on GitHub and click **Sync fork** (or merge from `plato15/openroom`). Cloudflare redeploys and applies database changes by itself.
-- **Cloudflare (command line):** `git pull && npm install && npm run deploy`.
-- **Docker:** `docker compose pull && docker compose up -d`. Database changes apply when the container starts.
+When a new version is out, admins see **"Openroom X is available"** on the Documents and Settings pages, with links to what's new and to these steps. Updates keep your documents, investors and settings; database changes apply by themselves.
 
-Read [CHANGELOG.md](CHANGELOG.md) first: anything you need to do by hand is listed there.
+**Cloudflare, with the Deploy button or a fork** (no command line):
+
+1. Open your copy of Openroom on GitHub and go to the **Actions** tab. If GitHub asks, click **I understand my workflows, go ahead and enable them**.
+2. Click **Update Openroom**, then **Run workflow**, then the green **Run workflow** button.
+3. Cloudflare redeploys by itself in a minute or two.
+
+It keeps your room's own Worker name, database, bucket and custom domain. If it cannot update safely (for example, you changed a file that the new version also changes), it stops without changing anything and says why. To update automatically every week, edit `.github/workflows/update-openroom.yml` and remove the `#` from the two `schedule` lines. A fork can also use GitHub's **Sync fork** button.
+
+The **Update Openroom** button arrived in 0.4.0. A room on 0.3.0 or older updates once by hand: on a fork, **Sync fork**; on a copy made by the Deploy button, ask someone comfortable with Git to run `bash scripts/update-openroom.sh` from a newer Openroom in your copy and push, or deploy a fresh room.
+
+Rarely, a release changes GitHub's own automation files (`.github/workflows`). GitHub does not let an automation change those, so the update stops and says so; copy those files from the new release by hand once (GitHub's web editor is enough), then run **Update Openroom** again.
+
+**Cloudflare, command line:** `git pull && npm install && npm run deploy` (or `bash scripts/update-openroom.sh` in a copy that is not a clone of Openroom).
+
+**Docker:** `docker compose pull && docker compose up -d`.
+
+Read [CHANGELOG.md](CHANGELOG.md) for each release; anything you need to do by hand is listed there under **Upgrading**.
+
+**The update check.** Once a day, the room asks GitHub's public list of Openroom releases whether there is a newer one. It is one anonymous request from the server; nothing about your room or its people is sent, and investors never see the notice. Set `UPDATE_CHECK=false` to turn it off.
 
 ## Backups
 
@@ -267,6 +284,7 @@ The suite runs twice: once in the real Workers runtime (Miniflare) and once agai
 | `src/routes/branding.ts` | The Settings tab: branding and email |
 | `src/settings.ts` | Settings saved in the database: owner, email, who is admin |
 | `src/templates.ts` | Room templates: folders, subfolders and placeholder pages |
+| `src/updates.ts`, `scripts/update-openroom.sh` | "New version available" notice; the Update Openroom workflow's script |
 | `src/links.ts`, `src/routes/shortlinks.ts` | Short links (`/deck`), reserved names, where to go after sign-in |
 | `src/render.ts` | Excel, CSV and Word as read-only pages |
 | `src/watermark.ts` | PDF stamping |

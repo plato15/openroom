@@ -19,7 +19,9 @@ import {
 } from "../brand";
 import type { AppEnv } from "../env";
 import { DEFAULT_MAIL_FROM } from "../email";
-import { notice, page } from "../layout";
+import { notice, page, updateNotice } from "../layout";
+import { availableUpdate, updateCheckOn } from "../updates";
+import { VERSION } from "../version";
 import { getMailSettings, putSetting } from "../settings";
 
 /** The Branding tab. Mounted inside adminRoutes, so only admins reach it. */
@@ -69,7 +71,11 @@ const isSlot = (s: string): s is LogoSlot => (LOGO_SLOTS as string[]).includes(s
 const back = (code: string, anchor = "") => `/admin/branding?m=${code}${anchor}`;
 
 brandingRoutes.get("/admin/branding", async (c) => {
-  const [saved, mail] = await Promise.all([readBrandSettings(c.env), getMailSettings(c.env)]);
+  const [saved, mail, update] = await Promise.all([
+    readBrandSettings(c.env),
+    getMailSettings(c.env),
+    availableUpdate(c.env, (p) => c.executionCtx.waitUntil(p)),
+  ]);
   const b = brand();
   const defaults = brandFrom({ ...c.env }, {});
   const code = c.req.query("m");
@@ -153,6 +159,14 @@ brandingRoutes.get("/admin/branding", async (c) => {
         </section>
 
         ${emailCard(c.env, mail)}
+
+        <section class="card stack" id="version">
+          <h2 class="h3">Version</h2>
+          ${update
+            ? updateNotice(update, VERSION)
+            : html`<p class="small">Openroom ${VERSION}${updateCheckOn(c.env) ? html` <span class="badge green">Up to date</span>` : html` <span class="muted">(the update check is off)</span>`}</p>`}
+          <p class="small muted">To update, see <a href="https://github.com/plato15/openroom#updating" target="_blank" rel="noopener">How to update</a>. Updates keep your documents, investors and settings.</p>
+        </section>
 
         <form method="post" action="/admin/branding/reset" class="card row-between" data-confirm="Reset all branding to the defaults?">
           <span class="small muted">Go back to the deployment defaults: names, colours, fonts and logos.</span>
