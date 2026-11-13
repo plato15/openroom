@@ -113,6 +113,7 @@ document.addEventListener("change", (e) => {
 document.addEventListener("click", async (e) => {
   const b = e.target instanceof Element ? e.target.closest("[data-copy]") : null;
   if (!(b instanceof HTMLElement)) return;
+  e.preventDefault(); // inside a folder header, copying must not fold the folder
   const url = location.origin + (b.dataset.copy || "");
   try {
     await navigator.clipboard.writeText(url);
@@ -123,3 +124,39 @@ document.addEventListener("click", async (e) => {
   }
   setTimeout(() => (b.textContent = "Copy link"), 1800);
 });
+
+// Folders on the Documents page fold up to one line. The browser remembers which, per room.
+const folds = [...document.querySelectorAll("details[data-fold]")];
+if (folds.length) {
+  const KEY = "openroom.folded";
+  const read = () => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(KEY) || "[]"));
+    } catch {
+      return new Set();
+    }
+  };
+  const save = () => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(folds.filter((d) => !d.open).map((d) => d.id)));
+    } catch {
+      // Private mode or storage off: folding still works, it just is not remembered.
+    }
+  };
+  const folded = read();
+  // A link to a folder (#id, a short link, after an upload) always shows it open.
+  const target = location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+  const targetFold = target ? target.closest("details[data-fold]") : null;
+  for (const d of folds) if (folded.has(d.id) && d !== targetFold) d.open = false;
+  if (targetFold) targetFold.scrollIntoView();
+  for (const d of folds) d.addEventListener("toggle", save);
+  const all = document.querySelector(".fold-all");
+  if (all instanceof HTMLElement) all.hidden = false;
+  document.addEventListener("click", (e) => {
+    const b = e.target instanceof Element ? e.target.closest("[data-fold-all]") : null;
+    if (!(b instanceof HTMLElement)) return;
+    const open = b.dataset.foldAll === "open";
+    for (const d of folds) d.open = open;
+    save();
+  });
+}

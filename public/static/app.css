@@ -355,3 +355,13 @@ details.more input { width: 100%; margin: 4px 0 6px; }
 .link-chip .slug { font-weight: 600; color: var(--navy); }
 .delete-list { margin: 0 0 16px; padding-left: 20px; }
 .delete-list li { margin: 4px 0; font-weight: 600; }
+
+/* Foldable folders */
+details.fold > summary.folder-head { list-style: none; cursor: pointer; }
+details.fold > summary.folder-head::-webkit-details-marker { display: none; }
+.fold-arrow { width: 10px; height: 10px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin: -4px 2px 0 0; transition: transform .15s; flex: none; }
+details.fold:not([open]) .fold-arrow { transform: rotate(-45deg); margin-top: 0; }
+details.fold:not([open]) > summary.folder-head .folder-title p { display: none; }
+details.fold > summary.folder-head:hover .folder-title .h3 { color: var(--blue-dark); }
+.fold-all { display: inline-flex; gap: 14px; margin-right: 8px; }
+.row-between > .actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }

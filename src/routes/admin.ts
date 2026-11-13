@@ -184,7 +184,15 @@ adminRoutes.get("/admin", async (c) => {
             <h1 class="h2">Documents</h1>
             <p class="muted small">Investors see a folder only when you give them access to it, and only files marked Visible.</p>
           </div>
-          <a class="btn ghost" href="/admin/preview">Preview</a>
+          <span class="actions">
+            ${topFolders.length > 1
+              ? html`<span class="fold-all" hidden>
+                  <button type="button" class="link-btn small" data-fold-all="close">Collapse all</button>
+                  <button type="button" class="link-btn small" data-fold-all="open">Expand all</button>
+                </span>`
+              : ""}
+            <a class="btn ghost" href="/admin/preview">Preview</a>
+          </span>
         </section>
         <details class="card add">
           <summary class="btn">New folder</summary>
@@ -215,8 +223,10 @@ adminRoutes.get("/admin", async (c) => {
               ? `Shared with ${people.map((p) => p.name || p.email).join(", ")}`
               : `Shared with ${people.length} investors`;
           const rows = (list: FileRow[], where: Folder) => fileRows(list, where, allFolders, statsById);
-          return html`<section class="card folder" id="${folder.id}">
-            <div class="folder-head">
+          // A folder folds up to its header line; the browser remembers which (see app.js).
+          return html`<details class="card folder fold" id="${folder.id}" open data-fold>
+            <summary class="folder-head" title="Fold or unfold this folder">
+              <span class="fold-arrow" aria-hidden="true"></span>
               <div class="folder-icon" aria-hidden="true"></div>
               <div class="folder-title">
                 <h2 class="h3">${folder.name} <span class="count">${real.length} ${real.length === 1 ? "file" : "files"}</span></h2>
@@ -229,7 +239,7 @@ adminRoutes.get("/admin", async (c) => {
                 <span class="tag ${folder.watermark ? "navy" : "grey"}">${folder.watermark ? "PDFs stamped" : "No stamp"}</span>
                 <span class="tag ${people.length ? "green" : "grey"}" title="${people.map((p) => p.name || p.email).join(", ")}">${shared}</span>
               </div>
-            </div>
+            </summary>
             <div class="folder-body">
               ${inFolder(folder.id).length
                 ? rows(inFolder(folder.id), folder)
@@ -307,7 +317,7 @@ adminRoutes.get("/admin", async (c) => {
                 </details>
               </div>
             </div>
-          </section>`;
+          </details>`;
         })}`,
     }),
   );
