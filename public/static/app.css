@@ -370,3 +370,12 @@ details.fold > summary.folder-head:hover .folder-title .h3 { color: var(--blue-d
 .notice.update { background: #eef4ff; color: var(--navy); border: 1px solid #c7d7fe; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
 .update-links { display: inline-flex; gap: 16px; }
 .update-links a { font-weight: 600; }
+
+/* Request access */
+textarea { width: 100%; font: inherit; padding: 12px 14px; border: 1px solid #cdd5e1; border-radius: 10px; background: #fff; resize: vertical; }
+textarea:focus { outline: 3px solid rgba(37,99,235,.25); border-color: var(--blue); }
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+.requests .request { border-top: 1px solid var(--line); padding: 14px 0; }
+.requests .request:first-of-type { border-top: 0; }
+.request-note { white-space: pre-wrap; background: var(--bg); border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: 14px; }
+.request-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }

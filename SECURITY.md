@@ -25,6 +25,10 @@ A room deployed without `ADMIN_EMAILS` has no admin. Until someone claims it, ev
 - The risk is the short window between deploying and claiming: someone who finds the brand new address first could claim it. Claim your room straight after deploying, or set `ADMIN_EMAILS` before the first visit to skip claiming. If someone else claimed it, delete the Worker (or the Docker volume) and deploy again: nothing of yours was in it yet.
 - The Resend key from the setup screen (or the Settings tab) is stored in the room's database, readable only by the app, never shown again in the page. A key set as a deployment secret takes priority.
 
+## Requests for access
+
+Anyone can ask for access from the sign-in page. The answer is the same thank-you page for a new request, someone who already has access, a person over the limit and a spam bot, so it reveals nothing about who is invited. Each email can ask three times a day (one open request per person), at most thirty requests an hour are stored, and a hidden field catches simple bots. A request grants nothing: an admin approves it and chooses the folders.
+
 ## Outgoing requests
 
 The server makes two kinds of outgoing request: sending email (Resend, SES or SMTP), and once a day an anonymous request to GitHub's public list of Openroom releases, to tell admins about updates. Nothing about the room, its documents or its people is sent. `UPDATE_CHECK=false` turns the release check off. Pages load fonts from Google Fonts; nothing else.

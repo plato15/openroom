@@ -5,6 +5,7 @@ Every change people running a room should know about. Newest first. Versions fol
 ## Unreleased
 
 ### Added
+- **Request access.** A link on the sign-in page lets people ask for access. Admins are emailed and approve on the Investors page (choosing folders, which sends the invite) or decline. The page never reveals who already has access.
 - **"Openroom X is available"** for admins on the Documents and Settings pages, from a daily check of Openroom's public releases on GitHub (`UPDATE_CHECK=false` turns it off). Settings shows the current version.
 - **Update Openroom**, a one-click update from the Actions tab of your copy on GitHub. Works for forks and for copies made by the Deploy button, keeps your Worker name, database, bucket and domains, and stops without changing anything if it cannot update safely. Optional weekly schedule.
 
