@@ -4,6 +4,9 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+### Changed
+- The Deploy to Cloudflare form now asks for two things only: your admin email and a Resend key. Every other setting has a default in the code and can be added later in the Cloudflare dashboard, where it stays through updates (`keep_vars`).
+
 ### Added
 - **Deploy to Cloudflare** button: the database and file bucket are created for you, and the room runs on a free `*.workers.dev` address. `APP_ORIGIN` can be left empty on Cloudflare.
 - **Docker** image (`ghcr.io/plato15/openroom`) and `docker-compose.yml` with automatic HTTPS (Caddy). Data in a SQLite file and a folder, or an S3-compatible bucket.

@@ -55,20 +55,11 @@
   ],
   "cloudflare": {
     "bindings": {
-      "APP_ORIGIN": {
-        "description": "Your room's address. Leave empty to use the free `*.workers.dev` address Cloudflare gives you. Set it later if you add your own domain, for example `https://dataroom.example.com`."
-      },
       "ADMIN_EMAILS": {
-        "description": "Who can manage the room: one email, or several separated by commas. Each one signs in with a link sent to that address."
+        "description": "Your email. You sign in with a link sent to it. Add more, separated by commas, for anyone else who manages the room."
       },
       "RESEND_API_KEY": {
-        "description": "Sign-in links go out by email. Create a free account at [resend.com](https://resend.com), then copy an API key from **API Keys**. Using Amazon SES instead? Leave this empty and see the README."
-      },
-      "MAIL_FROM": {
-        "description": "Who sign-in emails come from. `onboarding@resend.dev` only reaches the email you signed up to Resend with. To email investors, verify your domain in Resend and use an address on it, like `Data Room <rooms@yourdomain.com>`."
-      },
-      "BRAND_NAME": {
-        "description": "Your company name. You can change it, and add your logo and colours, later on the Branding tab."
+        "description": "Sends the sign-in emails. Make a free account at [resend.com](https://resend.com), then copy a key from **API Keys**. Use the email you signed up to Resend with as your admin email above."
       }
     }
   }

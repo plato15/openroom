@@ -17,8 +17,9 @@ npx wrangler deploy                      # first deploy: creates the D1 database
 npm run deploy                           # applies migrations, then deploys; use this every time after
 ```
 
-- Leave `APP_ORIGIN` empty unless they add a custom domain; then set it to `https://<domain>`.
-- `MAIL_FROM` defaults to `onboarding@resend.dev`, which only delivers to the Resend account owner. To email investors they must verify a domain in Resend and change `MAIL_FROM` in `wrangler.jsonc` (then `npm run deploy`).
+- Leave `APP_ORIGIN` unset unless they add a custom domain; then add it in the dashboard as `https://<domain>`.
+- In the Deploy button form, the Git account should be their personal GitHub account; "could not create the Git repository" means the name is taken or the organisation blocks Cloudflare.
+- `MAIL_FROM` defaults to `onboarding@resend.dev`, which only delivers to the Resend account owner. To email investors they must verify a domain in Resend, then add a variable `MAIL_FROM` in the Cloudflare dashboard (Workers & Pages → openroom → Settings → Variables and Secrets). `keep_vars` is on, so dashboard settings survive deploys. Do not add a `vars` block to `wrangler.jsonc`: every var there becomes a required field in the Deploy button form.
 - Done when: opening the `*.workers.dev` URL shows "Sign in", and entering an admin email delivers a link.
 
 **Docker (they have a server).**
