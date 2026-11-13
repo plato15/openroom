@@ -346,7 +346,7 @@ function fileRows(list: FileRow[], folder: Folder, allFolders: Folder[], statsBy
           <span class="kind kind-${fileKind(file.content_type, file.name).toLowerCase()}">${fileKind(file.content_type, file.name)}</span>
           <span class="file-main">
             <span class="file-name">${file.name}</span>
-            <span class="file-meta">Placeholder. Upload your own version; investors never see this one.</span>
+            <span class="file-meta">Placeholder. Upload your own version; investors never see this one.${file.slug ? ` Its link will be /${file.slug}.` : ""}</span>
           </span>
           <span class="row-actions">
             <span class="badge amber">To replace</span>

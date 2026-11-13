@@ -1,5 +1,6 @@
 import type { Env } from "./env";
-import { now, randomId } from "./util";
+import { RESERVED } from "./links";
+import { isSlug, now, randomId } from "./util";
 
 /**
  * Ready-made rooms: top-level folders, subfolders, and a hidden one-page placeholder in each
@@ -11,23 +12,62 @@ import { now, randomId } from "./util";
  * Cloudflare's free plan limits how much one request may do.
  */
 
-type Section = { name: string; description: string; items: string[] };
+/** An item is a subfolder name, or [name, short link] when the template suggests a link for it. */
+type Item = string | [name: string, slug: string];
+type Section = { name: string; description: string; slug?: string; items: Item[] };
 export type Template = { id: string; name: string; summary: string; sections: Section[] };
 
 export const TEMPLATES: Template[] = [
   {
+    // Follows the order of the standard venture due diligence request list, so an investor's
+    // checklist maps one to one onto the folders. Bank and wire details are left out on purpose:
+    // they go to an investor directly, never into a shared room.
     id: "investor",
     name: "Investor data room",
-    summary: "For a fundraise: everything investors ask for in due diligence.",
+    summary: "For a fundraise: the standard due diligence checklist, section by section, with short links like /cap-table.",
     sections: [
-      { name: "Company overview", description: "Start here: what the company does and why now.", items: ["Pitch deck", "One-page summary"] },
-      { name: "Corporate", description: "Incorporation, ownership and governance.", items: ["Certificate of incorporation", "Articles and bylaws", "Cap table", "Board minutes"] },
-      { name: "Financials", description: "Results so far and the plan ahead.", items: ["Financial model", "Historical accounts", "Budget and forecast"] },
-      { name: "Product and technology", description: "What we build and how.", items: ["Product overview", "Technology and security"] },
-      { name: "Market and customers", description: "Who buys and why.", items: ["Market overview", "Key metrics", "Customer contracts"] },
-      { name: "Team", description: "The people and how they are employed.", items: ["Organisation chart", "Team biographies", "Option plan"] },
-      { name: "Legal and IP", description: "Intellectual property, contracts and claims.", items: ["Intellectual property", "Material contracts", "Litigation"] },
-      { name: "This round", description: "Terms and use of funds.", items: ["Term sheet", "Use of funds"] },
+      {
+        name: "Corporate",
+        slug: "corporate",
+        description: "Incorporation, governance and company structure.",
+        items: [["Certificate of incorporation", "certificate"], ["Bylaws", "bylaws"], ["Subsidiaries", "subsidiaries"], ["Board minutes", "board-minutes"], ["Valuation (409A)", "valuation"]],
+      },
+      {
+        name: "Capitalization",
+        slug: "capitalization",
+        description: "Who owns what.",
+        items: [["Cap table", "cap-table"], ["Option plan", "option-plan"]],
+      },
+      {
+        name: "Financials",
+        slug: "financials",
+        description: "Results so far and the plan ahead.",
+        items: [["Financial statements", "financial-statements"], ["Budget and forecast", "budget"], ["Financial model", "financial-model"]],
+      },
+      {
+        name: "Team",
+        slug: "team",
+        description: "Management, employees and consultants.",
+        items: [["Team biographies", "team-bios"], ["Founder stock and vesting", "vesting"], ["Confidentiality and invention assignment", "invention-assignment"], ["Organisation chart", "org-chart"]],
+      },
+      {
+        name: "Business plan",
+        slug: "business-plan",
+        description: "What the company does, for whom, and against whom.",
+        items: [["Pitch deck", "deck"], ["Executive summary", "summary"], ["Competitors", "competitors"], ["Key metrics", "metrics"]],
+      },
+      {
+        name: "Financing",
+        slug: "financing",
+        description: "This round's terms and the investors so far.",
+        items: [["Term sheet", "term-sheet"], ["Financing agreements", "financing-agreements"], ["Schedule of investors", "investor-schedule"], ["Disclosure schedule", "disclosures"], ["Use of funds", "use-of-funds"]],
+      },
+      {
+        name: "IP",
+        slug: "ip-rights", // links need 3+ characters
+        description: "Intellectual property and agreements that touch it.",
+        items: [["Patents and trademarks", "trademarks"], ["IP licences", "ip-licences"], ["Joint ventures and development agreements", "development-agreements"]],
+      },
     ],
   },
   {
@@ -112,29 +152,46 @@ export async function applyTemplate(env: Env, template: Template): Promise<{ fol
   const t = now();
   const max = await env.DB.prepare("SELECT COALESCE(MAX(position), 0) AS p FROM folders").first<{ p: number }>();
   let position = max?.p ?? 0;
+  // Suggested links are only a convenience: one the room already uses (or a second copy of the
+  // template) is skipped, never an error. Links and ids share one set of names.
+  const used = await env.DB.prepare(
+    `SELECT slug AS s FROM files WHERE slug IS NOT NULL UNION SELECT slug FROM folders WHERE slug IS NOT NULL
+     UNION SELECT id FROM files UNION SELECT id FROM folders`,
+  ).all<{ s: string }>();
+  const taken = new Set(used.results.map((r) => r.s));
+  const claim = (slug: string | undefined): string | null => {
+    if (!slug || RESERVED.has(slug) || !isSlug(slug) || taken.has(slug)) return null;
+    taken.add(slug);
+    return slug;
+  };
   const statements: D1PreparedStatement[] = [];
   const puts: Promise<unknown>[] = [];
   let folders = 0;
   let placeholders = 0;
-  const addFolder = (name: string, description: string, parentId: string | null) => {
+  const addFolder = (name: string, description: string, parentId: string | null, slug: string | null = null) => {
     const id = randomId();
     position += 10;
     folders++;
     statements.push(
-      env.DB.prepare("INSERT INTO folders (id, name, description, position, watermark, created_at, parent_id) VALUES (?, ?, ?, ?, 1, ?, ?)").bind(
+      env.DB.prepare("INSERT INTO folders (id, name, description, position, watermark, created_at, parent_id, slug) VALUES (?, ?, ?, ?, 1, ?, ?, ?)").bind(
         id,
         name,
         description,
         position,
         t,
         parentId,
+        slug,
       ),
     );
     return id;
   };
   for (const [i, section] of template.sections.entries()) {
-    const topId = addFolder(`${i + 1}. ${section.name}`, section.description, null);
-    for (const item of section.items) {
+    const topId = addFolder(`${i + 1}. ${section.name}`, section.description, null, claim(section.slug));
+    for (const entry of section.items) {
+      const [item, itemSlug] = typeof entry === "string" ? [entry, undefined] : entry;
+      // The item's link goes on its file, so it keeps working when the founder uploads over the
+      // placeholder (a replaced file keeps its link) and opens the document itself.
+      const fileSlug = claim(itemSlug);
       const subId = addFolder(item, "", topId);
       const fileId = randomId();
       const key = `files/${fileId}`;
@@ -148,9 +205,9 @@ export async function applyTemplate(env: Env, template: Template): Promise<{ fol
       puts.push(env.FILES.put(key, pdf, { httpMetadata: { contentType: "application/pdf" } }));
       statements.push(
         env.DB.prepare(
-          `INSERT INTO files (id, folder_id, name, r2_key, content_type, size, published, allow_download, orientation, uploaded_at, updated_at, placeholder)
-           VALUES (?, ?, ?, ?, 'application/pdf', ?, 0, 0, 'portrait', ?, ?, 1)`,
-        ).bind(fileId, subId, `${item}.pdf`, key, pdf.byteLength, t, t),
+          `INSERT INTO files (id, folder_id, name, r2_key, content_type, size, published, allow_download, orientation, uploaded_at, updated_at, placeholder, slug)
+           VALUES (?, ?, ?, ?, 'application/pdf', ?, 0, 0, 'portrait', ?, ?, 1, ?)`,
+        ).bind(fileId, subId, `${item}.pdf`, key, pdf.byteLength, t, t, fileSlug),
       );
       placeholders++;
     }

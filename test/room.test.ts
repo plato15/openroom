@@ -994,6 +994,36 @@ describe("subfolders, templates and placeholders", () => {
     expect(denied.headers.get("location")).toBe("/");
     expect(await count("SELECT COUNT(*) AS n FROM folders")).toBe(total);
   });
+
+  it("lays the investor template out like the due diligence checklist, with short links that survive the upload", async () => {
+    const admin = await adminSession();
+    await req("/admin/templates", { cookie: admin, form: { template: "investor" } });
+    const tops = await env.DB.prepare("SELECT name FROM folders WHERE parent_id IS NULL AND slug IS NOT NULL ORDER BY position").all<{ name: string }>();
+    expect(tops.results.map((r) => r.name.replace(/^\d+\.\s*/, ""))).toEqual(
+      expect.arrayContaining(["Corporate", "Capitalization", "Financials", "Team", "Business plan", "Financing", "IP"]),
+    );
+    const cap = await env.DB.prepare("SELECT id FROM files WHERE slug = 'cap-table'").first<{ id: string }>();
+    expect(cap).toBeTruthy();
+    const section = await env.DB.prepare("SELECT id FROM folders WHERE slug = 'capitalization'").first<{ id: string }>();
+    expect(section).toBeTruthy();
+    expect(await (await req("/admin", { cookie: admin })).text()).toContain("Its link will be /cap-table.");
+
+    // A second copy adds folders but never fights over a link: each name still points at one thing.
+    await req("/admin/templates", { cookie: admin, form: { template: "investor" } });
+    const capLinks = await env.DB.prepare("SELECT COUNT(*) AS n FROM files WHERE slug = 'cap-table'").first<{ n: number }>();
+    expect(capLinks!.n).toBe(1);
+
+    // Uploading over the placeholder keeps the link, and the link opens it for an investor with the folder.
+    const fd = new FormData();
+    fd.append("file", new File([await makePdf("our cap table")], "Cap table.pdf"));
+    await req(`/admin/files/${cap!.id}/replace`, { cookie: admin, form: fd });
+    const row = await env.DB.prepare("SELECT slug, placeholder FROM files WHERE id = ?").bind(cap!.id).first();
+    expect(row).toEqual({ slug: "cap-table", placeholder: 0 });
+    const inv = await addInvestor({ folders: [section!.id] });
+    const opened = await req("/cap-table", { cookie: await signIn(inv.email) });
+    expect(opened.status).toBe(200);
+    expect((await req("/cap-table")).status).not.toBe(200);
+  });
 });
 
 describe("short links", () => {
