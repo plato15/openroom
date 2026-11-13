@@ -794,7 +794,7 @@ describe("first-time setup", () => {
     expect(await (await fresh("/setup", { cookie: draft })).text()).toContain(`value="${FOUNDER}"`);
     expect((await fresh("/setup/code")).headers.get("location")).toBe("/setup?m=expired");
     expect((await fresh("/setup/start", { form: { email: "nope", resendApiKey: KEY } })).status).toBe(400);
-    expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: "sk_live_123" } })).status).toBe(400);
+    expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: "not-a-resend-key" } })).status).toBe(400);
     expect((await fresh("/setup/start", { form: { email: FOUNDER, resendApiKey: KEY, mailFrom: "x\r\nBcc: a@b.c" } })).status).toBe(400);
     expect((await fresh("/setup/brand")).headers.get("location")).toBe("/"); // and "/" leads to /setup
   });
