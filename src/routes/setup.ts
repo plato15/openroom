@@ -13,7 +13,7 @@ import {
   sniffImage,
   TEXT,
 } from "../brand";
-import { DEFAULT_MAIL_FROM, sendMail, setupCodeMail } from "../email";
+import { DEFAULT_MAIL_FROM, sendMail, setupCodeMail, type MailFailure } from "../email";
 import type { AppEnv, Env } from "../env";
 import { notice, page } from "../layout";
 import { deleteSetting, getSetting, needsSetup, putSetting, putSettingIfAbsent, roomOwner } from "../settings";
@@ -195,13 +195,11 @@ async function sendCode(
   if (sends.length >= MAX_SENDS_PER_HOUR) return { error: "Too many codes were sent in the last hour. Try again later.", status: 429 };
   await putSetting(env, "setup_sends", [...sends, Date.now()]);
   const code = newCode();
-  const ok = await sendMail(env, setupCodeMail(env.APP_ORIGIN, email, code), { resendApiKey, mailFrom: mailFrom || DEFAULT_MAIL_FROM });
-  if (!ok) {
-    return {
-      error: "Resend did not accept that. Check the key, and that your Resend account uses this same email (Resend's test sender only reaches that one).",
-      status: 400,
-    };
-  }
+  let failure: MailFailure | null = null;
+  const ok = await sendMail(env, setupCodeMail(env.APP_ORIGIN, email, code), { resendApiKey, mailFrom: mailFrom || DEFAULT_MAIL_FROM }, (f) => {
+    failure = f;
+  });
+  if (!ok) return { error: explainFailure(failure, email), status: 400 };
   const pending: Pending = {
     email,
     codeHash: await codeHash(email, code),
@@ -213,6 +211,22 @@ async function sendCode(
   };
   await putSetting(env, "setup_pending", pending);
   return { code };
+}
+
+/** What to do about a refused email, in plain words. */
+function explainFailure(f: MailFailure | null, email: string): string {
+  switch (f?.reason) {
+    case "own_address_only":
+      return `Your key works. Until you verify a domain, Resend only sends to the email your Resend account uses${f.account ? ` (${f.account})` : ""}, not ${email}. Go back and use that email, or verify your domain at resend.com/domains and put an address on it in "Send from my own domain".`;
+    case "bad_key":
+      return "Resend did not recognise that key. Copy it again from API Keys in Resend; it starts with re_.";
+    case "sender_domain":
+      return "Resend has not verified the domain in your sender yet. Verify it at resend.com/domains, or leave the sender empty for now.";
+    case "other":
+      return `Resend did not send it: ${f.message}`;
+    default:
+      return "The email could not be sent. Check the key and try again.";
+  }
 }
 
 setupRoutes.post("/setup/start", onlyWhileUnclaimed, async (c) => {

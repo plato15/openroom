@@ -44,7 +44,37 @@ export function mailProvider(env: Env): MailProvider {
  * settings saved in the app are used. `use` sends with given settings instead: the setup screen
  * tests the founder's key by sending their code with it before anything is saved.
  */
-export async function sendMail(baseEnv: Env, mail: Mail, use?: MailSettings): Promise<boolean> {
+/** Why Resend refused an email, in terms a person can act on. */
+export type MailFailure =
+  | { reason: "own_address_only"; account: string | null } // key works; test sender only reaches the account's own email
+  | { reason: "bad_key" }
+  | { reason: "sender_domain" } // the sender's domain is not verified in Resend
+  | { reason: "other"; message: string };
+
+/** Reads Resend's error reply. Pure, so it can be tested without sending anything. */
+export function resendFailure(status: number, body: string): MailFailure {
+  let message = "";
+  let name = "";
+  try {
+    const j = JSON.parse(body) as { message?: unknown; name?: unknown };
+    message = typeof j.message === "string" ? j.message : "";
+    name = typeof j.name === "string" ? j.name : "";
+  } catch {
+    message = body;
+  }
+  if (/only send testing emails to your own email/i.test(message)) {
+    const account = message.match(/\(([^\s()]+@[^\s()]+)\)/)?.[1] ?? null;
+    return { reason: "own_address_only", account };
+  }
+  if (status === 401 || /invalid_api_key|missing_api_key/.test(name) || /api key is invalid/i.test(message)) return { reason: "bad_key" };
+  if (/domain is not verified|verify a domain/i.test(message)) return { reason: "sender_domain" };
+  return { reason: "other", message: message.slice(0, 200) || `Resend answered ${status}.` };
+}
+
+/**
+ * `report` hears why a send failed (Resend only), so the setup screen can say what to do.
+ */
+export async function sendMail(baseEnv: Env, mail: Mail, use?: MailSettings, report?: (f: MailFailure) => void): Promise<boolean> {
   // Mail is only captured instead of sent on a local address; anywhere else it is really sent.
   if (baseEnv.ENVIRONMENT !== "production" && isLocalOrigin(baseEnv.APP_ORIGIN)) {
     outbox.push(mail);
@@ -57,7 +87,7 @@ export async function sendMail(baseEnv: Env, mail: Mail, use?: MailSettings): Pr
     : { ...baseEnv, RESEND_API_KEY: baseEnv.RESEND_API_KEY || saved.resendApiKey, MAIL_FROM: baseEnv.MAIL_FROM || saved.mailFrom };
   const provider = mailProvider(env);
   try {
-    if (provider === "resend") return await sendResend(env, mail);
+    if (provider === "resend") return await sendResend(env, mail, report);
     if (provider === "smtp") return await sendSmtp(env, mail);
     if (provider === "ses") return await sendSes(env, mail);
   } catch (err) {
@@ -68,7 +98,7 @@ export async function sendMail(baseEnv: Env, mail: Mail, use?: MailSettings): Pr
   return false;
 }
 
-async function sendResend(env: Env, mail: Mail): Promise<boolean> {
+async function sendResend(env: Env, mail: Mail, report?: (f: MailFailure) => void): Promise<boolean> {
   if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -76,7 +106,9 @@ async function sendResend(env: Env, mail: Mail): Promise<boolean> {
     body: JSON.stringify({ from: mailFrom(env), to: [mail.to], subject: mail.subject, text: mail.text, html: mail.html }),
   });
   if (!res.ok) {
-    console.error(`mail not sent: Resend ${res.status} ${(await res.text()).slice(0, 300)}`);
+    const body = (await res.text()).slice(0, 600);
+    console.error(`mail not sent: Resend ${res.status} ${body.slice(0, 300)}`);
+    report?.(resendFailure(res.status, body));
     return false;
   }
   return true;
