@@ -77,3 +77,24 @@ describe("logo type check", () => {
     for (const bad of ["<html><svg></svg></html>", "<!-- <svg> -->", "hello", '<?xml version="1.0"?><note/>']) expect(sniffImage(enc(bad))).toBeNull();
   });
 });
+
+describe("Resend errors", () => {
+  it("turns Resend's replies into reasons a person can act on", async () => {
+    const { resendFailure } = await import("../src/email");
+    expect(
+      resendFailure(
+        403,
+        JSON.stringify({
+          message:
+            "You can only send testing emails to your own email address (owner@example.com). To send emails to other recipients, please verify a domain at resend.com/domains, and change the `from` address to an email using this domain.",
+          name: "validation_error",
+          statusCode: 403,
+        }),
+      ),
+    ).toEqual({ reason: "own_address_only", account: "owner@example.com" });
+    expect(resendFailure(401, JSON.stringify({ message: "Missing API key in the authorization header.", name: "missing_api_key" }))).toEqual({ reason: "bad_key" });
+    expect(resendFailure(403, JSON.stringify({ message: "API key is invalid", name: "validation_error" }))).toEqual({ reason: "bad_key" });
+    expect(resendFailure(403, JSON.stringify({ message: "The acme.com domain is not verified. Please, add and verify your domain on https://resend.com/domains", name: "validation_error" }))).toEqual({ reason: "sender_domain" });
+    expect(resendFailure(500, "upstream exploded")).toEqual({ reason: "other", message: "upstream exploded" });
+  });
+});
