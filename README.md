@@ -6,6 +6,8 @@ Built for a real seed fundraise, then opened up.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/plato15/openroom)
 
+Running a room? Click **Watch → Custom → Releases** at the top of [this page](https://github.com/plato15/openroom) and GitHub emails you when a new version is out. From 0.4.0 the room also tells its admins itself.
+
 <p>
   <img src="docs/investor-room.jpg" alt="The investor's room: folders with documents, on desktop" width="62%">
   <img src="docs/investor-phone.jpg" alt="The same room on a phone" width="24%">
@@ -191,7 +193,7 @@ Every setting, in one place. **None of them are needed:** the setup screen asks 
 
 ## Updating
 
-When a new version is out, admins see **"Openroom X is available"** on the Documents and Settings pages, with links to what's new and to these steps. Updates keep your documents, investors and settings; database changes apply by themselves.
+When a new version is out, admins see **"Openroom X is available"** on the Documents and Settings pages, with links to what's new and to these steps. To hear by email too, click **Watch → Custom → Releases** on [github.com/plato15/openroom](https://github.com/plato15/openroom). Updates keep your documents, investors and settings; database changes apply by themselves.
 
 **Cloudflare, with the Deploy button or a fork** (no command line):
 
