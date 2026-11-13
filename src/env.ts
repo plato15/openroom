@@ -5,7 +5,12 @@ export type Env = {
   ENVIRONMENT: "production" | "local" | "test";
   APP_ORIGIN: string;
   MAIL_FROM: string;
-  SES_REGION: string;
+  /** Optional: "resend", "smtp" or "ses". Left out, the first provider with its keys set is used. */
+  MAIL_PROVIDER?: string;
+  RESEND_API_KEY?: string;
+  /** Docker build only: smtp://user:pass@host:587 or smtps://user:pass@host:465 */
+  SMTP_URL?: string;
+  SES_REGION?: string;
   ADMIN_EMAILS?: string;
   BRAND_NAME?: string;
   BRAND_LEGAL_NAME?: string;

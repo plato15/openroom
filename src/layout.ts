@@ -4,14 +4,14 @@ import { brand, googleFontsHref } from "./brand";
 import type { Session } from "./env";
 
 /** Bump when public/static/app.css or app.js change, so browsers fetch the new files. */
-const ASSET_VERSION = "5";
+const ASSET_VERSION = "6";
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
 export function page(opts: {
   title: string;
   session?: Session | null;
-  nav?: "documents" | "investors" | "activity";
+  nav?: "documents" | "investors" | "activity" | "branding";
   body: Html;
   narrow?: boolean;
   /** Admin Preview: investor screens with a banner saying whose view this is. */
@@ -25,6 +25,7 @@ export function page(opts: {
           <a href="/admin" class="${nav === "documents" ? "on" : ""}">Documents</a>
           <a href="/admin/investors" class="${nav === "investors" ? "on" : ""}">Investors</a>
           <a href="/admin/activity" class="${nav === "activity" ? "on" : ""}">Activity</a>
+          <a href="/admin/branding" class="${nav === "branding" ? "on" : ""}">Branding</a>
         </nav>`
       : "";
   return html`<!doctype html>
@@ -35,7 +36,7 @@ export function page(opts: {
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="${b.dark}">
 <title>${title} · ${b.roomName}</title>
-<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="icon" href="${b.icon}" type="${b.iconType}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${googleFontsHref(b)}">
@@ -47,7 +48,7 @@ export function page(opts: {
 <header class="bar">
   <div class="bar-in ${narrow ? "narrow" : ""}">
     <a href="/" class="brand" aria-label="${b.roomName} home">
-      <img src="/static/logo-white.svg" alt="${b.name}" width="112" height="22">
+      <img src="${b.logo}" alt="${b.name}" height="22">
       <span class="brand-tag">Data room</span>
     </a>
     ${session

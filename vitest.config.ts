@@ -1,4 +1,5 @@
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
+import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig(async () => {
@@ -17,6 +18,7 @@ export default defineConfig(async () => {
         },
       }),
     ],
-    test: { setupFiles: ["./test/setup.ts"] },
+    resolve: { alias: [{ find: /^\.\/harness$/, replacement: resolve(import.meta.dirname, "test/harness.workers.ts") }] },
+    test: { setupFiles: ["./test/setup.ts"], include: ["test/room.test.ts"] },
   };
 });

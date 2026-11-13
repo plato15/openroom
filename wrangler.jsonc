@@ -1,32 +1,35 @@
 {
   // Openroom: one Cloudflare Worker, one D1 database, one private R2 bucket.
-  // Copy this file, then set the values marked CHANGE (see README, "Deploy").
+  // The "Deploy to Cloudflare" button (README) creates the database and bucket for you and
+  // fills in their ids. Deploying by hand works the same way: `npm run deploy` lets Wrangler
+  // create them on the first run.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "openroom",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
-  "workers_dev": false,
+  // The room is served on your free https://openroom.<your-subdomain>.workers.dev address.
+  // For your own domain (for example dataroom.example.com), add it in the Cloudflare dashboard
+  // under Workers > openroom > Settings > Domains, or add here:
+  //   "routes": [{ "pattern": "dataroom.example.com", "custom_domain": true }]
+  // then set APP_ORIGIN to https://dataroom.example.com.
+  "workers_dev": true,
   "preview_urls": false,
-  // CHANGE: your room's address. The domain must be a zone on your Cloudflare account.
-  "routes": [{ "pattern": "dataroom.example.com", "custom_domain": true }],
   "assets": { "directory": "./public", "binding": "ASSETS" },
-  "d1_databases": [
-    {
-      "binding": "DB",
-      "database_name": "openroom",
-      // CHANGE: the id printed by `npx wrangler d1 create openroom`.
-      "database_id": "REPLACE_WITH_D1_ID",
-      "migrations_dir": "migrations"
-    }
-  ],
+  "d1_databases": [{ "binding": "DB", "database_name": "openroom", "migrations_dir": "migrations" }],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "openroom-files" }],
   "vars": {
     "ENVIRONMENT": "production",
-    "APP_ORIGIN": "https://dataroom.example.com", // CHANGE: same address as the route, with https://
-    "MAIL_FROM": "Data Room <noreply@example.com>", // CHANGE: a sender verified in Amazon SES
-    "SES_REGION": "us-east-1", // CHANGE: the SES region where that sender is verified and out of the sandbox
-    // Branding. Logos live in public/static/ (logo-white.svg, icon.svg, logo-email.png).
+    // Leave empty to use the address the room is opened on (your workers.dev address).
+    // Set it when you add a custom domain, for example https://dataroom.example.com
+    "APP_ORIGIN": "",
+    // The sender of sign-in emails. onboarding@resend.dev works straight away, but Resend only
+    // delivers it to the email you signed up to Resend with. Verify your own domain in Resend to
+    // email investors, then change this to an address on it.
+    "MAIL_FROM": "Data Room <onboarding@resend.dev>",
+    // Only for Amazon SES: the region where the sender is verified.
+    "SES_REGION": "us-east-1",
+    // Default branding. Admins can change all of this on the Branding tab without a redeploy.
     "BRAND_NAME": "Openroom",
     "BRAND_LEGAL_NAME": "Openroom",
     "BRAND_INVITER": "The Openroom team",
@@ -36,6 +39,7 @@
     "BRAND_FONT_DISPLAY": "Inter",
     "SHOW_CREDIT": "true"
   },
-  // Secrets (npx wrangler secret put NAME): ADMIN_EMAILS, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+  // Secrets (listed in .dev.vars.example; set with `npx wrangler secret put NAME`):
+  //   ADMIN_EMAILS, RESEND_API_KEY, or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY for SES.
   "observability": { "enabled": true }
 }
