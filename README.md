@@ -201,9 +201,16 @@ When a new version is out, admins see **"Openroom X is available"** on the Docum
 2. Click **Update Openroom**, then **Run workflow**, then the green **Run workflow** button.
 3. Cloudflare redeploys by itself in a minute or two.
 
-It keeps your room's own Worker name, database, bucket and custom domain. If it cannot update safely (for example, you changed a file that the new version also changes), it stops without changing anything and says why. To update automatically every week, edit `.github/workflows/update-openroom.yml` and remove the `#` from the two `schedule` lines. A fork can also use GitHub's **Sync fork** button.
+It keeps your room's own Worker name, database, bucket and custom domain. If it cannot update safely (for example, you changed a file that the new version also changes), it stops without changing anything and says why. To update automatically every week, edit `.github/workflows/update-openroom.yml` and remove the `#` from the two `schedule` lines.
 
-The **Update Openroom** button arrived in 0.4.0. A room on 0.3.0 or older updates once by hand: on a fork, **Sync fork**; on a copy made by the Deploy button, ask someone comfortable with Git to run `bash scripts/update-openroom.sh` from a newer Openroom in your copy and push, or deploy a fresh room.
+**A fork (or a room on 0.3.0 or older): Sync fork.** The **Update Openroom** button arrived in 0.4.0, so older rooms update this way once:
+
+1. Open your copy on GitHub (for example `github.com/your-name/openroom`).
+2. Above the list of files, a bar says *"This branch is N commits behind plato15/openroom:main"*. Click **Sync fork**, then **Update branch**.
+3. Cloudflare rebuilds the same room by itself in about two minutes; follow it under **Workers & Pages → openroom → Deployments**. Your documents, investors and settings stay; database changes apply during the build.
+4. Reload your room. From 0.3.0 on, a room that was set up without `ADMIN_EMAILS` and never claimed shows the setup screen: claim it straight away. Otherwise you see the sign-in page with **Request access** under the button, which means you are on 0.4.0 or later.
+
+A copy made by the Deploy button on 0.3.0 or older has no **Sync fork** button: ask someone comfortable with Git to run `bash scripts/update-openroom.sh` from a newer Openroom in your copy and push, or deploy a fresh room. After that, it updates with **Update Openroom** like everyone else.
 
 Rarely, a release changes GitHub's own automation files (`.github/workflows`). GitHub does not let an automation change those, so the update stops and says so; copy those files from the new release by hand once (GitHub's web editor is enough), then run **Update Openroom** again.
 
