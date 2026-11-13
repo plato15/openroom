@@ -4,7 +4,7 @@ import { brand, googleFontsHref, themeVersion } from "./brand";
 import type { Session } from "./env";
 
 /** Bump when public/static/app.css or app.js change, so browsers fetch the new files. */
-const ASSET_VERSION = "12";
+const ASSET_VERSION = "14";
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 

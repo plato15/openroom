@@ -827,8 +827,14 @@ describe("first-time setup", () => {
     if (first !== second) expect((await fresh("/setup/verify", { form: { code: first! } })).headers.get("location")).toContain("m=wrong");
     const res = await fresh("/setup/verify", { form: { code: second! } });
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/setup/brand");
+    expect(res.headers.get("location")).toBe("/setup/room");
     const cookie = res.headers.get("set-cookie")!.split(";")[0];
+
+    // Step 4: the template choice. This shared test room already has folders, so nothing is added twice.
+    expect(await (await fresh("/setup/room", { cookie })).text()).toContain("Investor data room");
+    const before = (await env.DB.prepare("SELECT COUNT(*) AS n FROM folders").first<{ n: number }>())!.n;
+    expect((await fresh("/setup/room", { cookie, form: { template: "investor" } })).headers.get("location")).toBe("/setup/brand");
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM folders").first<{ n: number }>())!.n).toBe(before);
 
     // Step 2 and 3.
     expect((await fresh("/setup/brand", { cookie })).status).toBe(200);
@@ -857,5 +863,107 @@ describe("first-time setup", () => {
 
     // Leave the shared room's branding as the other tests expect it.
     await env.DB.prepare("DELETE FROM settings WHERE key = 'brand'").run();
+  });
+});
+
+describe("subfolders, templates and placeholders", () => {
+  async function addSubfolder(parent: string) {
+    const id = uid("sub");
+    await env.DB.prepare("INSERT INTO folders (id, name, description, position, watermark, created_at, parent_id) VALUES (?, ?, '', 0, 1, ?, ?)")
+      .bind(id, `Sub ${id}`, Date.now(), parent)
+      .run();
+    return id;
+  }
+
+  it("shows a subfolder's files only through the grant on its top folder", async () => {
+    const top = await addFolder();
+    const sub = await addSubfolder(top);
+    const other = await addSubfolder(await addFolder());
+    const inSub = await addFile(sub, { name: "In sub.pdf" });
+    const elsewhere = await addFile(other, { name: "Elsewhere.pdf" });
+    const inv = await addInvestor({ folders: [top] });
+    const cookie = await signIn(inv.email);
+    const room = await (await req("/room", { cookie })).text();
+    expect(room).toContain("In sub.pdf");
+    expect(room).not.toContain("Elsewhere.pdf");
+    expect((await req(`/d/${inSub}`, { cookie })).status).toBe(200);
+    expect((await req(`/d/${elsewhere}`, { cookie })).status).toBe(404);
+    expect((await req(`/d/${elsewhere}/view`, { cookie })).status).toBe(404);
+  });
+
+  it("never lets access be granted on a subfolder directly", async () => {
+    const admin = await adminSession();
+    const sub = await addSubfolder(await addFolder());
+    const email = `${uid("direct")}@fund.test`.toLowerCase();
+    await req("/admin/investors", { cookie: admin, form: { email, name: "Direct", folders: [sub] } });
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM grants g JOIN investors i ON i.id = g.investor_id WHERE i.email = ?").bind(email).first<{ n: number }>();
+    expect(row!.n).toBe(0);
+  });
+
+  it("keeps placeholders hidden until replaced, then shows the real document", async () => {
+    const admin = await adminSession();
+    const top = await addFolder();
+    const sub = await addSubfolder(top);
+    const ph = await addFile(sub, { name: "Pitch deck.pdf", published: false });
+    await env.DB.prepare("UPDATE files SET placeholder = 1 WHERE id = ?").bind(ph).run();
+    const inv = await addInvestor({ folders: [top] });
+    const cookie = await signIn(inv.email);
+
+    // Cannot be made visible as it is; even if a row were marked published, it is not served.
+    const pub = await req(`/admin/files/${ph}`, { cookie: admin, form: { action: "publish" } });
+    expect(pub.headers.get("location")).toContain("m=placeholder_publish");
+    await env.DB.prepare("UPDATE files SET published = 1 WHERE id = ?").bind(ph).run();
+    expect((await req(`/d/${ph}`, { cookie })).status).toBe(404);
+    expect(await (await req("/room", { cookie })).text()).not.toContain("Pitch deck.pdf");
+    await env.DB.prepare("UPDATE files SET published = 0 WHERE id = ?").bind(ph).run();
+
+    // Upload your version: same place and name, now real and visible.
+    const fd = new FormData();
+    fd.append("file", new File([await makePdf("our real deck")], "deck-final.pdf"));
+    const res = await req(`/admin/files/${ph}/replace`, { cookie: admin, form: fd });
+    expect(res.headers.get("location")).toContain("m=replaced_placeholder");
+    const row = await env.DB.prepare("SELECT name, published, placeholder FROM files WHERE id = ?").bind(ph).first();
+    expect(row).toEqual({ name: "Pitch deck.pdf", published: 1, placeholder: 0 });
+    expect((await req(`/d/${ph}`, { cookie })).status).toBe(200);
+  });
+
+  it("does not delete a folder that still has subfolders", async () => {
+    const admin = await adminSession();
+    const top = await addFolder();
+    await addSubfolder(top);
+    const res = await req(`/admin/folders/${top}/delete`, { cookie: admin, form: {} });
+    expect(res.headers.get("location")).toContain("m=folder_not_empty");
+    expect(await env.DB.prepare("SELECT 1 FROM folders WHERE id = ?").bind(top).first()).toBeTruthy();
+  });
+
+  it("adds a template's folders, subfolders and valid hidden placeholders", async () => {
+    const admin = await adminSession();
+    const count = async (sql: string) => (await env.DB.prepare(sql).first<{ n: number }>())!.n;
+    const [folders, placeholders] = [await count("SELECT COUNT(*) AS n FROM folders"), await count("SELECT COUNT(*) AS n FROM files WHERE placeholder = 1")];
+    expect((await req("/admin/templates", { cookie: admin })).status).toBe(200);
+    const res = await req("/admin/templates", { cookie: admin, form: { template: "board" } });
+    expect(res.headers.get("location")).toContain("m=template_added");
+    // Board portal: 5 sections with 10 items between them.
+    expect(await count("SELECT COUNT(*) AS n FROM folders")).toBe(folders + 15);
+    expect(await count("SELECT COUNT(*) AS n FROM files WHERE placeholder = 1")).toBe(placeholders + 10);
+    expect(await count("SELECT COUNT(*) AS n FROM files WHERE placeholder = 1 AND published = 1")).toBe(0);
+    const top = await env.DB.prepare("SELECT id FROM folders WHERE name = '1. Board meetings' AND parent_id IS NULL ORDER BY created_at DESC").first<{ id: string }>();
+    expect(top).toBeTruthy();
+    const sub = await env.DB.prepare("SELECT id FROM folders WHERE parent_id = ? AND name = 'Next meeting pack'").bind(top!.id).first<{ id: string }>();
+    const ph = await env.DB.prepare("SELECT r2_key FROM files WHERE folder_id = ?").bind(sub!.id).first<{ r2_key: string }>();
+    const pdf = await PDFDocument.load(await (await env.FILES.get(ph!.r2_key))!.arrayBuffer());
+    expect(pdf.getPageCount()).toBe(1);
+
+    // An investor given the new folder sees nothing yet: every page is a placeholder.
+    const inv = await addInvestor({ folders: [top!.id] });
+    const room = await (await req("/room", { cookie: await signIn(inv.email) })).text();
+    expect(room).not.toContain("Next meeting pack");
+    expect(room).toContain("No documents here yet");
+
+    // Admins only: an investor is sent away and nothing is added.
+    const total = await count("SELECT COUNT(*) AS n FROM folders");
+    const denied = await req("/admin/templates", { cookie: await signIn(inv.email), form: { template: "board" } });
+    expect(denied.headers.get("location")).toBe("/");
+    expect(await count("SELECT COUNT(*) AS n FROM folders")).toBe(total);
   });
 });

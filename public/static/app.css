@@ -324,3 +324,30 @@ details.more input { width: 100%; margin: 4px 0 6px; }
 .next-steps li::before { content: counter(n); position: absolute; left: 14px; top: 14px; width: 26px; height: 26px; border-radius: 50%; background: var(--navy); color: #fff; font: 700 13px/26px var(--font); text-align: center; }
 .next-steps li span { flex: 1 1 220px; }
 .setup-back { margin: 0 0 10px; }
+
+/* Subfolders */
+.subfolder { border-top: 1px solid var(--line); }
+.subfolder-title { margin: 0; padding: 12px 16px 4px; font-size: 13px; font-weight: 700; letter-spacing: .02em; color: var(--muted); text-transform: uppercase; }
+.subfolder .files { margin-top: 0; }
+.tag.amber, .badge.amber { background: #b45309; color: #fff; }
+.subfolder.admin { padding-bottom: 8px; }
+.subfolder-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-right: 16px; }
+.subfolder.admin .files.admin { margin: 0; }
+.subfolder .empty { padding: 4px 16px 8px; margin: 0; }
+.sub-upload { padding: 4px 16px 0; }
+.placeholder-row { background: #fffbeb; }
+.replace-inline { display: inline-flex; margin: 0; }
+.replace-inline label.btn { position: relative; overflow: hidden; cursor: pointer; }
+.replace-inline input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+/* Template picker */
+.template-list { display: grid; gap: 10px; grid-template-columns: 1fr; }
+@media (min-width: 760px) { .template-list { grid-template-columns: 1fr 1fr; } }
+.template { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; font-weight: 400; background: #fff; }
+.template:has(input:checked) { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue) inset; background: #f8fbff; }
+.template input { margin-top: 4px; accent-color: var(--blue); }
+.template-body { display: grid; gap: 4px; }
+.template-body strong { color: var(--navy); font-size: 15px; }
+.template-sections { color: var(--muted); line-height: 1.5; }
+.subfolder-actions { display: inline-flex; gap: 14px; align-items: center; }
+.subfolder-actions > details.menu { display: inline-block; }

@@ -52,7 +52,7 @@ npm run dev         # http://localhost:8799 (copy .dev.vars.example to .dev.vars
 
 Rules that matter more than anything else (the full list is in [CONTRIBUTING.md](CONTRIBUTING.md)):
 
-1. **Access is decided in one place:** `fileForInvestor` and `visibleToInvestor` in `src/access.ts`. Every route that serves a document to an investor goes through it. Never add a second path to a file.
+1. **Access is decided in one place:** `fileForInvestor` and `visibleToInvestor` in `src/access.ts`. Every route that serves a document to an investor goes through it. Never add a second path to a file. Subfolders reach access through their top folder (`COALESCE(f.parent_id, f.id)` in every grant join), and placeholders (`files.placeholder = 1`) are never served.
 2. **Unknown or forbidden means 404**, never 403, so ids cannot be probed.
 3. **Both builds run the same `src/`.** Only `src/node/` is Node-specific. Do not use Cloudflare-only or Node-only APIs elsewhere; if you must, add an adapter in `src/node/` and a test in `test/node.test.ts`.
 4. **Database changes are new files** in `migrations/` (`0006_*.sql`, ...). Never edit an existing migration. They must run on both D1 and SQLite.

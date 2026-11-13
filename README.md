@@ -28,7 +28,7 @@ Using an AI coding agent to set it up? Point it at [AGENTS.md](AGENTS.md).
 - Read documents in the browser. PDFs show slides wide and documents tall; Excel, CSV and Word files open as read-only pages.
 
 **For you (the admin)**
-- Folders, uploads, and per-investor access you tick folder by folder.
+- Folders with one level of subfolders, uploads, and per-investor access you tick folder by folder (a folder's subfolders come with it).
 - **Download** switch on every file, off by default: investors view only unless you allow it.
 - **Stamping**: every PDF page, spreadsheet and Word page carries the viewer's email and the date.
 - **Activity**: every sign-in, view and download, per investor and per file.
@@ -36,7 +36,8 @@ Using an AI coding agent to set it up? Point it at [AGENTS.md](AGENTS.md).
 - Optional **custom link** per file (`/d/pitch-deck`), and **replace with a new version** that keeps the link, access and history.
 - End dates per investor, instant revoke, invites by email.
 - Files named "draft" or "internal" upload hidden and cannot be published until renamed.
-- **Setup screen** the first time the room opens: your email, then your name, colours and logo. Nothing to configure while deploying.
+- **Setup screen** the first time the room opens: your email, what the room is for, then your name, colours and logo. Nothing to configure while deploying.
+- **Templates** that set up the folders for you: Investor data room, Selling the company, Board portal, Client or partner portal (or start empty). Each section has **subfolders** with a hidden placeholder page in each, like "Pitch deck"; click **Upload your version** on each one and it becomes visible.
 - **Settings** tab: name, colours, fonts, logos and email sender, changed in the app with no redeploy.
 
 <p><img src="docs/admin-documents.jpg" alt="Admin: folders, files, download switches and visibility" width="88%"></p>
@@ -264,6 +265,7 @@ The suite runs twice: once in the real Workers runtime (Miniflare) and once agai
 | `src/routes/setup.ts` | First-time setup: claim the room with an emailed code, then branding |
 | `src/routes/branding.ts` | The Settings tab: branding and email |
 | `src/settings.ts` | Settings saved in the database: owner, email, who is admin |
+| `src/templates.ts` | Room templates: folders, subfolders and placeholder pages |
 | `src/render.ts` | Excel, CSV and Word as read-only pages |
 | `src/watermark.ts` | PDF stamping |
 | `src/email.ts` | Resend, SES and SMTP sending, and the two emails |

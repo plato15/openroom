@@ -17,6 +17,7 @@ import { DEFAULT_MAIL_FROM, sendMail, setupCodeMail } from "../email";
 import type { AppEnv, Env } from "../env";
 import { notice, page } from "../layout";
 import { deleteSetting, getSetting, needsSetup, putSetting, putSettingIfAbsent, roomOwner } from "../settings";
+import { applyTemplate, templateById, TEMPLATES } from "../templates";
 import { isLocalOrigin, normalizeEmail, sha256 } from "../util";
 
 /**
@@ -84,20 +85,20 @@ const ownerOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
   await next();
 };
 
-const STEPS = ["Your email", "Connect email", "Confirm", "Your brand"] as const;
+const STEPS = ["Your email", "Connect email", "Confirm", "Your room", "Your brand"] as const;
 
 /** The page frame for every setup step: a labelled progress bar over one card. */
-function stepPage(n: 1 | 2 | 3 | 4, title: string, body: unknown, opts: { wide?: boolean; back?: string } = {}) {
+function stepPage(n: 1 | 2 | 3 | 4 | 5, title: string, body: unknown, opts: { wide?: boolean; back?: string } = {}) {
   return page({
     title,
     narrow: !opts.wide,
     bare: true,
     body: html`<div class="setup ${opts.wide ? "wide" : ""}">
       ${opts.back ? html`<p class="crumbs setup-back"><a href="${opts.back}">← Back</a></p>` : ""}
-      <div class="steps" role="progressbar" aria-valuemin="1" aria-valuemax="4" aria-valuenow="${n}" aria-label="Setup progress">
+      <div class="steps" role="progressbar" aria-valuemin="1" aria-valuemax="5" aria-valuenow="${n}" aria-label="Setup progress">
         ${STEPS.map((_, i) => html`<span class="${i < n ? "on" : ""}"></span>`)}
       </div>
-      <p class="step-label">Step ${n} of 4 · ${STEPS[n - 1]}</p>
+      <p class="step-label">Step ${n} of 5 · ${STEPS[n - 1]}</p>
       ${body}
     </div>`,
   });
@@ -296,10 +297,87 @@ setupRoutes.post("/setup/verify", onlyWhileUnclaimed, async (c) => {
   await putSetting(c.env, "mail", { resendApiKey: pending.resendApiKey, mailFrom: pending.mailFrom || DEFAULT_MAIL_FROM });
   await deleteSetting(c.env, "setup_sends");
   await startSession(c, pending.email, "admin");
+  return c.redirect("/setup/room", 303);
+});
+
+// ---------- Step 4: what the room is for ----------
+
+/** The template choice, shared by setup and the empty Documents page. */
+export function templatePicker(action: string, button: string, opts: { allowEmpty: boolean }) {
+  return html`<form method="post" action="${action}" class="stack templates">
+    <div class="template-list" role="radiogroup" aria-label="Templates">
+      ${TEMPLATES.map(
+        (t, i) => html`<label class="template">
+          <input type="radio" name="template" value="${t.id}" ${i === 0 ? "checked" : ""}>
+          <span class="template-body">
+            <strong>${t.name}</strong>
+            <span class="small muted">${t.summary}</span>
+            <span class="template-sections small">${t.sections.map((s, n) => `${n + 1}. ${s.name}`).join(" · ")}</span>
+          </span>
+        </label>`,
+      )}
+      ${opts.allowEmpty
+        ? html`<label class="template">
+            <input type="radio" name="template" value="empty">
+            <span class="template-body"><strong>Start empty</strong><span class="small muted">No folders. Build your own.</span></span>
+          </label>`
+        : ""}
+    </div>
+    <p class="small muted">Each section gets subfolders with a hidden placeholder page in each, like "Pitch deck". Upload your own version over each one and it becomes visible. Rename, add or delete anything afterwards.</p>
+    <button class="btn wide" type="submit">${button}</button>
+  </form>`;
+}
+
+setupRoutes.get("/setup/room", ownerOnly, (c) =>
+  c.html(
+    stepPage(
+      4,
+      "Your room",
+      html`<section class="card setup-card">
+          <h1 class="h2">What is this room for?</h1>
+          <p class="muted">Pick a starting point and we will set up the folders for you. Nothing is shared until you invite someone.</p>
+          ${templatePicker("/setup/room", "Set up my folders", { allowEmpty: true })}
+        </section>`,
+      { wide: true },
+    ),
+  ),
+);
+
+setupRoutes.post("/setup/room", ownerOnly, async (c) => {
+  const form = await c.req.parseBody();
+  const template = templateById(typeof form.template === "string" ? form.template : "");
+  // Only into an empty room, so going back and choosing again never doubles the folders.
+  const existing = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM folders").first<{ n: number }>();
+  if (template && !existing?.n) await applyTemplate(c.env, template);
   return c.redirect("/setup/brand", 303);
 });
 
-// ---------- Step 4: your brand ----------
+/** The same choice later, from the Documents page. Adds folders after the ones already there. */
+setupRoutes.get("/admin/templates", ownerOnly, (c) =>
+  c.html(
+    page({
+      title: "Start from a template",
+      session: c.get("session"),
+      nav: "documents",
+      body: html`<p class="crumbs"><a href="/admin">‹ Documents</a></p>
+        <section class="card setup-card">
+          <h1 class="h2">Start from a template</h1>
+          <p class="muted">Adds a ready-made set of folders after the ones you already have.</p>
+          ${templatePicker("/admin/templates", "Add these folders", { allowEmpty: false })}
+        </section>`,
+    }),
+  ),
+);
+
+setupRoutes.post("/admin/templates", ownerOnly, async (c) => {
+  const form = await c.req.parseBody();
+  const template = templateById(typeof form.template === "string" ? form.template : "");
+  if (!template) return c.redirect("/admin/templates", 303);
+  await applyTemplate(c.env, template);
+  return c.redirect("/admin?m=template_added", 303);
+});
+
+// ---------- Step 5: your brand ----------
 
 /** Ready-made colours, so nobody has to use a colour picker. */
 const MAIN_SWATCHES = ["#2563EB", "#0E9F6E", "#7C3AED", "#DB2777", "#EA580C", "#0891B2", "#111827", "#B45309"];
@@ -319,7 +397,7 @@ function brandStep(error?: string) {
   const b = brand();
   const name = b.name === "Openroom" ? "" : b.name;
   return stepPage(
-    4,
+    5,
     "Your brand",
     html`<section class="card setup-card">
         <h1 class="h2">Make it yours</h1>
@@ -365,7 +443,7 @@ function brandStep(error?: string) {
           </div>
         </form>
       </section>`,
-    { wide: true },
+    { wide: true, back: "/setup/room" },
   );
 }
 
@@ -402,6 +480,7 @@ setupRoutes.get("/setup/done", ownerOnly, async (c) => {
   const testSender = !c.env.MAIL_FROM && (!mail?.mailFrom || mail.mailFrom.includes("resend.dev"));
   const owner = await roomOwner(c.env);
   const b = brand();
+  const toReplace = (await c.env.DB.prepare("SELECT COUNT(*) AS n FROM files WHERE placeholder = 1").first<{ n: number }>())?.n ?? 0;
   return c.html(
     page({
       title: "You are all set",
@@ -415,8 +494,11 @@ setupRoutes.get("/setup/done", ownerOnly, async (c) => {
             <p class="muted center">Three things to do next, in this order.</p>
             <ol class="next-steps">
               <li>
-                <span><strong>Add your documents.</strong> Make a folder and upload. Files stay hidden until you mark them Visible.</span>
-                <a class="btn small" href="/admin">Add a folder</a>
+                ${toReplace
+                  ? html`<span><strong>Swap in your documents.</strong> Your folders are ready with ${toReplace} placeholders. Click <em>Upload your version</em> on each one.</span>
+                      <a class="btn small" href="/admin">Open folders</a>`
+                  : html`<span><strong>Add your documents.</strong> Make a folder and upload. Files stay hidden until you mark them Visible.</span>
+                      <a class="btn small" href="/admin">Add a folder</a>`}
               </li>
               <li>
                 <span><strong>Invite an investor.</strong> Tick the folders they may see. They sign in with their email.</span>

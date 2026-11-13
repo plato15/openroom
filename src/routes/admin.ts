@@ -44,7 +44,11 @@ const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
   folder_created: ["ok", "Folder created."],
   folder_saved: ["ok", "Folder saved."],
   folder_deleted: ["ok", "Folder deleted."],
-  folder_not_empty: ["error", "Move or delete the files in this folder first."],
+  folder_not_empty: ["error", "Move or delete the files and subfolders in this folder first."],
+  subfolder_created: ["ok", "Subfolder added."],
+  template_added: ["ok", "Folders added. Upload your own version over each placeholder marked To replace."],
+  placeholder_publish: ["error", "This is a placeholder. Upload your own version first; it becomes visible then."],
+  replaced_placeholder: ["ok", "Uploaded. Investors with access to this folder can see it now."],
   folder_name: ["error", "Give the folder a name."],
   uploaded: ["ok", "Upload finished."],
   upload_none: ["error", "Choose at least one file."],
@@ -149,6 +153,7 @@ adminRoutes.get("/admin", async (c) => {
   ]);
   const statsById = new Map(stats.results.map((s) => [s.file_id, s]));
   const allFolders = folders.results;
+  const topFolders = allFolders.filter((f) => !f.parent_id);
 
   return c.html(
     page({
@@ -172,86 +177,81 @@ adminRoutes.get("/admin", async (c) => {
             <button class="btn" type="submit">Create folder</button>
           </form>
         </details>
-        ${allFolders.length === 0 ? html`<section class="card center"><p class="muted">No folders yet. Create one to start uploading.</p></section>` : ""}
-        ${allFolders.map((folder) => {
-          const folderFiles = files.results.filter((f) => f.folder_id === folder.id);
+        ${allFolders.length === 0
+          ? html`<section class="card center">
+              <p class="muted">No folders yet. Start from a ready-made set of folders, or create your own.</p>
+              <p><a class="btn" href="/admin/templates">Start from a template</a></p>
+            </section>`
+          : ""}
+        ${topFolders.map((folder) => {
+          const subs = allFolders.filter((f) => f.parent_id === folder.id);
+          const inFolder = (id: string) => files.results.filter((f) => f.folder_id === id);
+          const everyFile = [folder, ...subs].flatMap((f) => inFolder(f.id));
+          const real = everyFile.filter((f) => !f.placeholder);
+          const toReplace = everyFile.length - real.length;
           const people = grants.results.filter((g) => g.folder_id === folder.id);
-          const downloadable = folderFiles.filter((f) => f.allow_download === 1).length;
+          const downloadable = real.filter((f) => f.allow_download === 1).length;
           const shared = !people.length
             ? "Not shared"
             : people.length <= 2
               ? `Shared with ${people.map((p) => p.name || p.email).join(", ")}`
               : `Shared with ${people.length} investors`;
+          const rows = (list: FileRow[], where: Folder) => fileRows(list, where, allFolders, statsById);
           return html`<section class="card folder" id="${folder.id}">
             <div class="folder-head">
               <div class="folder-icon" aria-hidden="true"></div>
               <div class="folder-title">
-                <h2 class="h3">${folder.name} <span class="count">${folderFiles.length} ${folderFiles.length === 1 ? "file" : "files"}</span></h2>
+                <h2 class="h3">${folder.name} <span class="count">${real.length} ${real.length === 1 ? "file" : "files"}</span></h2>
                 ${folder.description ? html`<p class="small muted">${folder.description}</p>` : ""}
               </div>
               <div class="folder-tags">
+                ${toReplace ? html`<span class="tag amber">${toReplace} to replace</span>` : ""}
                 <span class="tag ${downloadable ? "blue" : "grey"}">${downloadable ? `${downloadable} downloadable` : "View only"}</span>
                 <span class="tag ${folder.watermark ? "navy" : "grey"}">${folder.watermark ? "PDFs stamped" : "No stamp"}</span>
                 <span class="tag ${people.length ? "green" : "grey"}" title="${people.map((p) => p.name || p.email).join(", ")}">${shared}</span>
               </div>
             </div>
             <div class="folder-body">
-              ${folderFiles.length
-                ? html`<ul class="files admin">
-                    ${folderFiles.map((file) => {
-                      const s = statsById.get(file.id);
-                      const hiddenByType = file.published === 1 && !visibleToInvestor(file);
-                      return html`<li class="file-row">
-                        <span class="kind kind-${fileKind(file.content_type, file.name).toLowerCase()}">${fileKind(file.content_type, file.name)}</span>
-                        <span class="file-main">
-                          <a class="file-name" href="/admin/preview/f/${file.id}">${file.name}</a>
-                          <span class="file-meta">
-                            ${file.slug ? html`<span class="slug">/d/${file.slug}</span> · ` : ""}${formatSize(file.size)} · ${formatDate(file.updated_at)} ·
-                            <a href="/admin/files/${file.id}">${s ? `${s.opens} ${s.opens === 1 ? "open" : "opens"} by ${s.people} ${s.people === 1 ? "person" : "people"}` : "Not opened yet"}</a>
-                          </span>
-                          ${hiddenByType
-                            ? html`<span class="file-warn">Investors cannot see this: ${fileKind(file.content_type, file.name)} files cannot open in the browser and Download is off. Upload a PDF export, or turn Download on.</span>`
-                            : !viewKind(file.content_type)
-                              ? html`<span class="file-hint">Opens only as a download. Upload a PDF export if investors should read it in the browser.</span>`
-                              : ""}
-                        </span>
-                        <span class="row-actions">
-                          ${downloadSwitch(file)}
-                          <span class="badge ${file.published ? "green" : "grey"}">${file.published ? "Visible" : "Hidden"}</span>
-                          <a class="link-btn" href="/admin/preview/f/${file.id}">Preview</a>
-                          <details class="menu">
-                            <summary class="link-btn">Edit</summary>
-                            <div class="menu-body stack">
-                              <form method="post" action="/admin/files/${file.id}">
-                                <input type="hidden" name="action" value="${file.published ? "hide" : "publish"}">
-                                <button class="btn small wide ${file.published ? "ghost" : ""}" type="submit">${file.published ? "Hide from investors" : "Make visible"}</button>
-                              </form>
-                              <form method="post" action="/admin/files/${file.id}" class="inline-form">
-                                <input type="hidden" name="action" value="rename">
-                                <input name="name" value="${file.name}" maxlength="160" aria-label="File name">
-                                <button class="btn small ghost" type="submit">Rename</button>
-                              </form>
-                              ${slugForm(file)}
-                              ${replaceForm(file)}
-                              ${allFolders.length > 1
-                                ? html`<form method="post" action="/admin/files/${file.id}" class="inline-form">
-                                    <input type="hidden" name="action" value="move">
-                                    <select name="folder_id" aria-label="Move to folder">
-                                      ${allFolders.map((f) => html`<option value="${f.id}" ${f.id === folder.id ? "selected" : ""}>${f.name}</option>`)}
-                                    </select>
-                                    <button class="btn small ghost" type="submit">Move</button>
-                                  </form>`
-                                : ""}
-                              <form method="post" action="/admin/files/${file.id}/delete" data-confirm="Delete ${file.name}? This cannot be undone.">
-                                <button class="btn small danger wide" type="submit">Delete file</button>
-                              </form>
-                            </div>
-                          </details>
-                        </span>
-                      </li>`;
-                    })}
-                  </ul>`
-                : html`<p class="muted small empty">No files yet. Upload the first one below.</p>`}
+              ${inFolder(folder.id).length
+                ? rows(inFolder(folder.id), folder)
+                : subs.length
+                  ? ""
+                  : html`<p class="muted small empty">No files yet. Upload the first one below.</p>`}
+              ${subs.map(
+                (sub) => html`<div class="subfolder admin" id="${sub.id}">
+                  <div class="subfolder-head">
+                    <h3 class="subfolder-title">${sub.name}</h3>
+                    <span class="subfolder-actions">
+                    <details class="menu">
+                      <summary class="link-btn small">Add files</summary>
+                      <div class="menu-body">
+                        <form method="post" action="/admin/folders/${sub.id}/upload" enctype="multipart/form-data" class="stack tight">
+                          <input type="file" name="files" multiple required aria-label="Files to upload to ${sub.name}">
+                          <label class="check small"><input type="checkbox" name="publish" checked> Visible now</label>
+                          <button class="btn small" type="submit">Upload</button>
+                        </form>
+                      </div>
+                    </details>
+                    <details class="menu">
+                      <summary class="link-btn small">Subfolder</summary>
+                      <div class="menu-body stack">
+                        <form method="post" action="/admin/folders/${sub.id}" class="inline-form">
+                          <input name="name" value="${sub.name}" required maxlength="80" aria-label="Subfolder name">
+                          <input type="hidden" name="position" value="${sub.position}">
+                          <input type="hidden" name="description" value="${sub.description}">
+                          ${sub.watermark ? html`<input type="hidden" name="watermark" value="on">` : ""}
+                          <button class="btn small ghost" type="submit">Rename</button>
+                        </form>
+                        <form method="post" action="/admin/folders/${sub.id}/delete" data-confirm="Delete the subfolder ${sub.name}?">
+                          <button class="btn small danger wide" type="submit">Delete subfolder</button>
+                        </form>
+                      </div>
+                    </details>
+                    </span>
+                  </div>
+                  ${inFolder(sub.id).length ? rows(inFolder(sub.id), sub) : html`<p class="muted small empty">Empty.</p>`}
+                </div>`,
+              )}
               <div class="folder-foot">
                 <form method="post" action="/admin/folders/${folder.id}/upload" enctype="multipart/form-data" class="upload">
                   <input type="file" name="files" multiple required aria-label="Files to upload to ${folder.name}">
@@ -259,6 +259,16 @@ adminRoutes.get("/admin", async (c) => {
                   <label class="check small"><input type="checkbox" name="allow_download"> Downloadable</label>
                   <button class="btn small" type="submit">Upload</button>
                 </form>
+                <details class="settings">
+                  <summary class="link-btn">New subfolder</summary>
+                  <div class="settings-body">
+                    <form method="post" action="/admin/folders" class="inline-form">
+                      <input type="hidden" name="parent_id" value="${folder.id}">
+                      <input name="name" required maxlength="80" placeholder="Board minutes" aria-label="Subfolder name">
+                      <button class="btn small" type="submit">Add subfolder</button>
+                    </form>
+                  </div>
+                </details>
                 <details class="settings">
                   <summary class="link-btn">Folder settings</summary>
                   <div class="settings-body">
@@ -286,17 +296,106 @@ adminRoutes.get("/admin", async (c) => {
   );
 });
 
+/** Where a folder sits, for menus: "Legal / Cap table". */
+const folderLabel = (f: Folder, all: Folder[]) => {
+  const parent = f.parent_id ? all.find((p) => p.id === f.parent_id) : null;
+  return parent ? `${parent.name} / ${f.name}` : f.name;
+};
+
+function fileRows(list: FileRow[], folder: Folder, allFolders: Folder[], statsById: Map<string, { opens: number; people: number }>) {
+  return html`<ul class="files admin">
+    ${list.map((file) => {
+      const s = statsById.get(file.id);
+      if (file.placeholder) {
+        // A template placeholder: the one thing to do is upload the real document over it.
+        return html`<li class="file-row placeholder-row">
+          <span class="kind kind-${fileKind(file.content_type, file.name).toLowerCase()}">${fileKind(file.content_type, file.name)}</span>
+          <span class="file-main">
+            <span class="file-name">${file.name}</span>
+            <span class="file-meta">Placeholder. Upload your own version; investors never see this one.</span>
+          </span>
+          <span class="row-actions">
+            <span class="badge amber">To replace</span>
+            <form method="post" action="/admin/files/${file.id}/replace" enctype="multipart/form-data" class="replace-inline">
+              <label class="btn small">Upload your version<input type="file" name="file" required data-autosubmit aria-label="Your version of ${file.name}"></label>
+            </form>
+            <form method="post" action="/admin/files/${file.id}/delete" data-confirm="Remove the placeholder ${file.name}?">
+              <button class="link-btn small" type="submit">Remove</button>
+            </form>
+          </span>
+        </li>`;
+      }
+      const hiddenByType = file.published === 1 && !visibleToInvestor(file);
+      return html`<li class="file-row">
+        <span class="kind kind-${fileKind(file.content_type, file.name).toLowerCase()}">${fileKind(file.content_type, file.name)}</span>
+        <span class="file-main">
+          <a class="file-name" href="/admin/preview/f/${file.id}">${file.name}</a>
+          <span class="file-meta">
+            ${file.slug ? html`<span class="slug">/d/${file.slug}</span> · ` : ""}${formatSize(file.size)} · ${formatDate(file.updated_at)} ·
+            <a href="/admin/files/${file.id}">${s ? `${s.opens} ${s.opens === 1 ? "open" : "opens"} by ${s.people} ${s.people === 1 ? "person" : "people"}` : "Not opened yet"}</a>
+          </span>
+          ${hiddenByType
+            ? html`<span class="file-warn">Investors cannot see this: ${fileKind(file.content_type, file.name)} files cannot open in the browser and Download is off. Upload a PDF export, or turn Download on.</span>`
+            : !viewKind(file.content_type)
+              ? html`<span class="file-hint">Opens only as a download. Upload a PDF export if investors should read it in the browser.</span>`
+              : ""}
+        </span>
+        <span class="row-actions">
+          ${downloadSwitch(file)}
+          <span class="badge ${file.published ? "green" : "grey"}">${file.published ? "Visible" : "Hidden"}</span>
+          <a class="link-btn" href="/admin/preview/f/${file.id}">Preview</a>
+          <details class="menu">
+            <summary class="link-btn">Edit</summary>
+            <div class="menu-body stack">
+              <form method="post" action="/admin/files/${file.id}">
+                <input type="hidden" name="action" value="${file.published ? "hide" : "publish"}">
+                <button class="btn small wide ${file.published ? "ghost" : ""}" type="submit">${file.published ? "Hide from investors" : "Make visible"}</button>
+              </form>
+              <form method="post" action="/admin/files/${file.id}" class="inline-form">
+                <input type="hidden" name="action" value="rename">
+                <input name="name" value="${file.name}" maxlength="160" aria-label="File name">
+                <button class="btn small ghost" type="submit">Rename</button>
+              </form>
+              ${slugForm(file)}
+              ${replaceForm(file)}
+              ${allFolders.length > 1
+                ? html`<form method="post" action="/admin/files/${file.id}" class="inline-form">
+                    <input type="hidden" name="action" value="move">
+                    <select name="folder_id" aria-label="Move to folder">
+                      ${allFolders.map((f) => html`<option value="${f.id}" ${f.id === folder.id ? "selected" : ""}>${folderLabel(f, allFolders)}</option>`)}
+                    </select>
+                    <button class="btn small ghost" type="submit">Move</button>
+                  </form>`
+                : ""}
+              <form method="post" action="/admin/files/${file.id}/delete" data-confirm="Delete ${file.name}? This cannot be undone.">
+                <button class="btn small danger wide" type="submit">Delete file</button>
+              </form>
+            </div>
+          </details>
+        </span>
+      </li>`;
+    })}
+  </ul>`;
+}
+
 adminRoutes.post("/admin/folders", async (c) => {
   const form = await c.req.parseBody();
   const name = str(form.name, 80);
   if (!name) return c.redirect("/admin?m=folder_name", 303);
+  // A subfolder goes inside a top-level folder only (one level deep) and takes its stamp setting.
+  const parentId = str(form.parent_id, 64);
+  const parent = parentId
+    ? await c.env.DB.prepare("SELECT * FROM folders WHERE id = ? AND parent_id IS NULL").bind(parentId).first<Folder>()
+    : null;
+  if (parentId && !parent) return c.text("Not found", 404);
   const max = await c.env.DB.prepare("SELECT COALESCE(MAX(position), 0) AS p FROM folders").first<{ p: number }>();
+  const id = randomId();
   await c.env.DB.prepare(
-    "INSERT INTO folders (id, name, description, position, watermark, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+    "INSERT INTO folders (id, name, description, position, watermark, created_at, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
   )
-    .bind(randomId(), name, str(form.description), (max?.p ?? 0) + 10, on(form.watermark) ? 1 : 0, now())
+    .bind(id, name, str(form.description), (max?.p ?? 0) + 10, parent ? parent.watermark : on(form.watermark) ? 1 : 0, now(), parent?.id ?? null)
     .run();
-  return c.redirect("/admin?m=folder_created", 303);
+  return c.redirect(parent ? `/admin?m=subfolder_created#${id}` : "/admin?m=folder_created", 303);
 });
 
 adminRoutes.post("/admin/folders/:id", async (c) => {
@@ -314,7 +413,11 @@ adminRoutes.post("/admin/folders/:id", async (c) => {
 
 adminRoutes.post("/admin/folders/:id/delete", async (c) => {
   const id = c.req.param("id");
-  const count = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM files WHERE folder_id = ?").bind(id).first<{ n: number }>();
+  const count = await c.env.DB.prepare(
+    "SELECT (SELECT COUNT(*) FROM files WHERE folder_id = ?1) + (SELECT COUNT(*) FROM folders WHERE parent_id = ?1) AS n",
+  )
+    .bind(id)
+    .first<{ n: number }>();
   if ((count?.n ?? 0) > 0) return c.redirect(`/admin?m=folder_not_empty#${id}`, 303);
   await c.env.DB.batch([
     c.env.DB.prepare("DELETE FROM grants WHERE folder_id = ?").bind(id),
@@ -374,6 +477,8 @@ adminRoutes.post("/admin/files/:id", async (c) => {
   const t = now();
   switch (form.action) {
     case "publish":
+      if (file.placeholder)
+        return c.redirect(form.back === "file" ? `/admin/files/${file.id}?m=placeholder_publish` : `/admin?m=placeholder_publish#${file.folder_id}`, 303);
       if (looksInternal(file.name))
         return c.redirect(form.back === "file" ? `/admin/files/${file.id}?m=file_internal` : `/admin?m=file_internal#${file.folder_id}`, 303);
       await c.env.DB.prepare("UPDATE files SET published = 1, updated_at = ? WHERE id = ?").bind(t, file.id).run();
@@ -440,12 +545,15 @@ adminRoutes.post("/admin/files/:id/replace", async (c) => {
 
   await c.env.FILES.put(file.r2_key, bytes, { httpMetadata: { contentType: type } });
   await c.env.FILES.delete(renderKey(file.id));
+  // A template placeholder becomes a real document: visible straight away, unless its name says draft.
+  const wasPlaceholder = file.placeholder === 1;
+  const publish = wasPlaceholder && !looksInternal(name) ? 1 : file.published;
   await c.env.DB.prepare(
-    "UPDATE files SET name = ?, content_type = ?, size = ?, orientation = ?, updated_at = ? WHERE id = ?",
+    "UPDATE files SET name = ?, content_type = ?, size = ?, orientation = ?, updated_at = ?, placeholder = 0, published = ? WHERE id = ?",
   )
-    .bind(name, type, upload.size, orientation, now(), file.id)
+    .bind(name, type, upload.size, orientation, now(), publish, file.id)
     .run();
-  return c.redirect(`${back}?m=replaced${anchor}`, 303);
+  return c.redirect(`${back}?m=${wasPlaceholder && publish ? "replaced_placeholder" : "replaced"}${anchor}`, 303);
 });
 
 adminRoutes.post("/admin/files/:id/delete", async (c) => {
@@ -529,12 +637,16 @@ adminRoutes.get("/admin/files/:id/preview", async (c) => {
 
 // ---------- Investors ----------
 
-function folderChecks(folders: Folder[], granted: Set<string>) {
+function folderChecks(all: Folder[], granted: Set<string>) {
+  const folders = all.filter((f) => !f.parent_id);
   if (!folders.length) return html`<p class="muted small">Create a folder first on the Documents tab.</p>`;
   return html`<fieldset class="checks">
     <legend>Folders they can see</legend>
     ${folders.map(
-      (f) => html`<label class="check"><input type="checkbox" name="folders" value="${f.id}" ${checked(granted.has(f.id))}> ${f.name}</label>`,
+      (f) => {
+        const subs = all.filter((s) => s.parent_id === f.id).length;
+        return html`<label class="check"><input type="checkbox" name="folders" value="${f.id}" ${checked(granted.has(f.id))}> ${f.name}${subs ? html` <span class="muted small">(and its ${subs} ${subs === 1 ? "subfolder" : "subfolders"})</span>` : ""}</label>`;
+      },
     )}
   </fieldset>`;
 }
@@ -622,7 +734,8 @@ function grantStatements(c: Parameters<MiddlewareHandler<AppEnv>>[0], investorId
 const formList = (v: unknown): string[] => (Array.isArray(v) ? v : v === undefined ? [] : [v]).filter((x): x is string => typeof x === "string");
 
 async function folderIdSet(c: Parameters<MiddlewareHandler<AppEnv>>[0]) {
-  const rows = await c.env.DB.prepare("SELECT id FROM folders").all<{ id: string }>();
+  // Access is granted on top-level folders only; their subfolders come with them.
+  const rows = await c.env.DB.prepare("SELECT id FROM folders WHERE parent_id IS NULL").all<{ id: string }>();
   return new Set(rows.results.map((r) => r.id));
 }
 

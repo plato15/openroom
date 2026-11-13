@@ -16,18 +16,21 @@ export type FileWithFolder = FileRow & {
  * The one rule for what an investor can see. A file is visible only when it is published, sits
  * in a folder granted to this investor, and can either open in the browser or be downloaded.
  */
-export function visibleToInvestor(file: Pick<FileRow, "published" | "content_type" | "allow_download">) {
-  return file.published === 1 && (file.allow_download === 1 || VIEWABLE_TYPES.has(file.content_type));
+export function visibleToInvestor(file: Pick<FileRow, "published" | "content_type" | "allow_download"> & { placeholder?: number }) {
+  return file.published === 1 && file.placeholder !== 1 && (file.allow_download === 1 || VIEWABLE_TYPES.has(file.content_type));
 }
 
-/** Looks a file up through the investor's grants. Anything else comes back null, which callers turn into a 404. */
+/**
+ * Looks a file up through the investor's grants. Anything else comes back null, which callers
+ * turn into a 404. A file in a subfolder is reached through the grant on its top-level folder.
+ */
 export async function fileForInvestor(env: Env, investorId: string, fileId: string): Promise<FileWithFolder | null> {
   const row = await env.DB.prepare(
     `SELECT fi.*, f.name AS folder_name, f.watermark
        FROM files fi
        JOIN folders f ON f.id = fi.folder_id
-       JOIN grants g ON g.folder_id = f.id AND g.investor_id = ?1
-      WHERE (fi.id = ?2 OR fi.slug = ?2) AND fi.published = 1`,
+       JOIN grants g ON g.folder_id = COALESCE(f.parent_id, f.id) AND g.investor_id = ?1
+      WHERE (fi.id = ?2 OR fi.slug = ?2) AND fi.published = 1 AND fi.placeholder = 0`,
   )
     .bind(investorId, fileId)
     .first<FileWithFolder>();

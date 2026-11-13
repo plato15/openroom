@@ -100,3 +100,11 @@ if (preview && brandForm) {
   }
   update();
 }
+
+// "Upload your version" on a template placeholder: choosing the file is the whole action.
+document.addEventListener("change", (e) => {
+  const input = e.target;
+  if (input instanceof HTMLInputElement && input.type === "file" && input.hasAttribute("data-autosubmit") && input.files?.length && input.form) {
+    input.form.requestSubmit();
+  }
+});

@@ -7,6 +7,8 @@ Openroom holds confidential documents, so security reports are welcome and taken
 ## What Openroom promises
 
 - A file is served only to a signed-in investor who is not revoked, not past their end date, and has access to the file's folder, and only if the file is marked Visible. Everything else is a 404.
+- Subfolders are one level deep. Access is granted on top-level folders only and covers their subfolders; a file in a subfolder is reached only through the grant on its top-level folder.
+- Template placeholders are never served to investors, even if marked Visible, and cannot be made visible until a real document is uploaded over them.
 - Files live in a private R2 bucket (or, with Docker, a private folder or S3 bucket) and leave it only through the app after that check. The one rule lives in `src/access.ts` and the same tests check it on both builds.
 - Ids and tokens are 128 or 256 random bits. Only SHA-256 hashes of sign-in tokens and session cookies are stored.
 - Form posts must come from the room's own origin. Pages use a strict Content Security Policy with no inline scripts; rendered spreadsheets and Word files run with scripts switched off.
