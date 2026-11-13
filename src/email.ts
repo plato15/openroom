@@ -118,7 +118,7 @@ function shell(origin: string, heading: string, paragraphs: string[], button?: {
 <tr><td style="padding:28px">
 <h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:${b.dark}">${esc(heading)}</h1>
 ${body}${cta}
-<p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#94A3B8">${esc(b.legalName)}. Confidential. This message was sent to you because you were given access to the ${esc(b.roomName)}.</p>
+<p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#94A3B8">${esc(b.legalSentence)} Confidential. This message was sent to you because you were given access to the ${esc(b.roomName)}.</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
 

@@ -10,6 +10,8 @@ export type Brand = {
   name: string; // "Acme"
   roomName: string; // "Acme data room"
   legalName: string; // "Acme Inc." (footer and emails)
+  /** The legal name as a sentence, without doubling a final full stop: "Acme Inc." or "Acme Ltd." */
+  legalSentence: string;
   inviter: string; // who invites, in the invite email: "Ada at Acme"
   host: string; // "dataroom.acme.com", printed on stamps
   color: string; // buttons and links
@@ -81,10 +83,12 @@ export function brandFrom(env: Env, saved: BrandSettings = {}): Brand {
   const logos = saved.logos ?? {};
   const logoUrl = (slot: LogoSlot) => (logos[slot] ? `/brand/${slot}?v=${logos[slot]!.v}` : DEFAULT_LOGOS[slot]);
   const emailType = logos.email?.type;
+  const legalName = pick(TEXT, saved.legalName, env.BRAND_LEGAL_NAME) ?? name;
   return {
     name,
     roomName: `${name} data room`,
-    legalName: pick(TEXT, saved.legalName, env.BRAND_LEGAL_NAME) ?? name,
+    legalName,
+    legalSentence: `${legalName.replace(/\.+$/, "")}.`,
     inviter: pick(TEXT, saved.inviter, env.BRAND_INVITER) ?? `The ${name} team`,
     host,
     color,
@@ -147,6 +151,13 @@ export function googleFontsHref(b: Brand): string {
   const fam = (f: string, weights: boolean) => `family=${encodeURIComponent(f).replace(/%20/g, "+")}${weights ? ":wght@400;500;600;700" : ""}`;
   const families = b.fontDisplay === b.fontBody ? [fam(b.fontBody, true)] : [fam(b.fontDisplay, false), fam(b.fontBody, true)];
   return `https://fonts.googleapis.com/css2?${families.join("&")}&display=swap`;
+}
+
+/** A short fingerprint of the theme, put in the stylesheet URL so a Branding change is never served stale. */
+export function themeVersion(b: Brand): string {
+  let h = 5381;
+  for (const ch of themeCss(b)) h = ((h * 33) ^ ch.charCodeAt(0)) >>> 0;
+  return h.toString(36);
 }
 
 export function themeCss(b: Brand): string {

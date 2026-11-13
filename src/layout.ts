@@ -1,10 +1,10 @@
 import { html } from "hono/html";
 import type { HtmlEscapedString } from "hono/utils/html";
-import { brand, googleFontsHref } from "./brand";
+import { brand, googleFontsHref, themeVersion } from "./brand";
 import type { Session } from "./env";
 
 /** Bump when public/static/app.css or app.js change, so browsers fetch the new files. */
-const ASSET_VERSION = "6";
+const ASSET_VERSION = "8";
 
 type Html = HtmlEscapedString | Promise<HtmlEscapedString>;
 
@@ -41,7 +41,7 @@ export function page(opts: {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="${googleFontsHref(b)}">
 <link rel="stylesheet" href="/static/app.css?v=${ASSET_VERSION}">
-<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/theme.css?v=${themeVersion(b)}">
 <script src="/static/app.js?v=${ASSET_VERSION}" defer></script>
 </head>
 <body>
@@ -67,7 +67,7 @@ ${preview
     </div></div>`
   : ""}
 <main class="wrap ${narrow ? "narrow" : ""}">${body}</main>
-<footer class="foot wrap ${narrow ? "narrow" : ""}">${b.legalName}. Confidential. Shared for due diligence only.${b.credit
+<footer class="foot wrap ${narrow ? "narrow" : ""}">${b.legalSentence} Confidential. Shared for due diligence only.${b.credit
   ? html`<span class="credit">Powered by <a href="https://github.com/plato15/openroom" rel="noopener">Openroom</a>.</span>`
   : ""}</footer>
 </body>

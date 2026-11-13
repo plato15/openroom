@@ -85,7 +85,7 @@ brandingRoutes.get("/admin/branding", async (c) => {
           </div>
           <div class="bp-body">
             <p class="h3">${b.roomName}</p>
-            <p class="muted small">${b.legalName}. Confidential. Shared for due diligence only.</p>
+            <p class="muted small">${b.legalSentence} Confidential. Shared for due diligence only.</p>
             <span class="btn small">A button</span> <a href="/admin/branding">A link</a>
           </div>
         </section>
@@ -96,15 +96,15 @@ brandingRoutes.get("/admin/branding", async (c) => {
             <label>Company name
               <input name="name" value="${saved.name ?? ""}" maxlength="80" placeholder="${defaults.name}">
             </label>
-            <label>Legal name <span class="muted small">(footer and emails)</span>
+            <label><span>Legal name <span class="muted small hint">(footer and emails)</span></span>
               <input name="legalName" value="${saved.legalName ?? ""}" maxlength="80" placeholder="${defaults.legalName}">
             </label>
           </div>
-          <label>Who sends invites <span class="muted small">(for example, Ada at Acme)</span>
+          <label><span>Who sends invites <span class="muted small hint">(for example, Ada at Acme)</span></span>
             <input name="inviter" value="${saved.inviter ?? ""}" maxlength="80" placeholder="${defaults.inviter}">
           </label>
           <div class="two">
-            <label>Main colour <span class="muted small">(buttons and links)</span>
+            <label><span>Main colour <span class="muted small hint">(buttons and links)</span></span>
               <span class="color-field"><input type="color" name="color" value="${b.color.toLowerCase()}" aria-label="Main colour"><code>${b.color.toUpperCase()}</code></span>
             </label>
             <label>Header colour

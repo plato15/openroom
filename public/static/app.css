@@ -261,3 +261,6 @@ a.link-btn { text-decoration: none; }
 .logo-view img { max-height: 40px; max-width: 100%; width: auto; }
 .logo-view img.icon { height: 32px; width: 32px; object-fit: contain; }
 .logo-slot input[type=file] { width: 100%; }
+.hint { font-weight: 400; }
+/* Four admin tabs fit on a phone without scrolling. */
+@media (max-width: 420px) { .tabs { gap: 0; } .tabs a { padding: 10px 10px; font-size: 13px; } }

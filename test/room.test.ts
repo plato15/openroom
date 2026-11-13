@@ -618,7 +618,7 @@ describe("admin", () => {
     const page = await (await req("/")).text();
     expect(page).toContain("Openroom data room");
     expect(page).toContain("family=Inter");
-    expect(page).toContain('href="/theme.css"');
+    expect(page).toMatch(/href="\/theme\.css\?v=[a-z0-9]+"/);
     expect(page).toContain("Powered by");
     const css = await (await req("/theme.css")).text();
     expect(css).toContain("--blue:#2563EB");
@@ -655,11 +655,15 @@ describe("branding tab", () => {
 
   it("changes names, colours and fonts with no redeploy, and checks every value", async () => {
     const admin = await adminSession();
+    const before = await (await req("/")).text();
     let res = await req("/admin/branding", { cookie: admin, form: { name: "Acme", legalName: "Acme Inc.", inviter: "Ada at Acme", color: "#ff0000", dark: "#112233", fontBody: "DM Sans", fontDisplay: "" } });
     expect(res.headers.get("location")).toContain("m=saved");
     const page = await (await req("/")).text();
     expect(page).toContain("Acme data room");
-    expect(page).toContain("Acme Inc.");
+    expect(page).toContain("Acme Inc. Confidential.");
+    expect(page).not.toContain("Inc..");
+    // The stylesheet address changes with the theme, so browsers never keep the old colours.
+    expect(page.match(/theme\.css\?v=(\w+)/)?.[1]).not.toBe(before.match(/theme\.css\?v=(\w+)/)?.[1]);
     expect(page).toContain("family=DM+Sans");
     const css = await (await req("/theme.css")).text();
     expect(css).toContain("--blue:#FF0000");
