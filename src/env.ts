@@ -47,6 +47,8 @@ export type Folder = {
   created_at: number;
   /** Set on a subfolder: the top-level folder it sits in. Access follows the top-level folder. */
   parent_id: string | null;
+  /** Optional short link: /<slug> opens the room at this folder. */
+  slug: string | null;
 };
 
 export type FileRow = {

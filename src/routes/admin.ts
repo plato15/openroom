@@ -25,6 +25,7 @@ import {
   isSlug,
 } from "../util";
 import { canWatermark, orientationOf } from "../watermark";
+import { checkLink } from "../links";
 
 export const adminRoutes = new Hono<AppEnv>();
 const MAX_UPLOAD = 50 * 1024 * 1024;
@@ -54,10 +55,11 @@ const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
   upload_none: ["error", "Choose at least one file."],
   file_saved: ["ok", "File saved."],
   file_deleted: ["ok", "File deleted."],
-  slug_saved: ["ok", "Custom link saved."],
-  slug_cleared: ["ok", "Custom link removed. The file uses its standard link again."],
-  slug_invalid: ["error", "Custom links use 3 to 60 lowercase letters, numbers and hyphens, like pitch-deck."],
-  slug_taken: ["error", "Another file already uses that link. Pick a different one."],
+  slug_saved: ["ok", "Link saved. Use Copy link to share it."],
+  slug_cleared: ["ok", "Link removed."],
+  slug_invalid: ["error", "Links use 3 to 60 lowercase letters, numbers and hyphens, like pitch-deck."],
+  slug_taken: ["error", "Another file or folder already uses that link. Pick a different one."],
+  slug_reserved: ["error", "That name is used by the room itself. Pick a different one."],
   replaced: ["ok", "New version uploaded. Same link, same access, same history."],
   replace_none: ["error", "Choose the new version of the file first."],
   replace_bad: ["error", "That file could not be used: it is over 50 MB, or a PDF that cannot be stamped (for example password protected)."],
@@ -95,16 +97,32 @@ function investorStatus(i: Investor): [label: string, cls: string] {
   return ["Active", "green"];
 }
 
-/** Optional custom link for a file. Access is still checked on every open, so a readable link gives nothing away. */
+/** Optional short link for a file (/deck). Access is still checked on every open, so a readable link gives nothing away. */
 function slugForm(file: FileRow, back?: "file") {
   return html`<form method="post" action="/admin/files/${file.id}" class="stack tight">
     <input type="hidden" name="action" value="slug">
     ${back ? html`<input type="hidden" name="back" value="file">` : ""}
-    <label class="small">Custom link
-      <span class="slug-input"><span class="prefix">/d/</span><input name="slug" value="${file.slug ?? ""}" maxlength="60" placeholder="${slugify(file.name.replace(/\.[a-z0-9]+$/i, "")) || "pitch-deck"}" autocapitalize="off" spellcheck="false"></span>
+    <label class="small">Short link
+      <span class="slug-input"><span class="prefix">/</span><input name="slug" value="${file.slug ?? ""}" maxlength="60" placeholder="${slugify(file.name.replace(/\.[a-z0-9]+$/i, "")) || "pitch-deck"}" autocapitalize="off" spellcheck="false"></span>
     </label>
     <button class="btn small ghost" type="submit">Save link</button>
   </form>`;
+}
+
+/** Short link for a folder (/legal): opens the room at that folder. Empty removes it. */
+function folderLinkForm(folder: Folder) {
+  return html`<form method="post" action="/admin/folders/${folder.id}/link" class="stack tight">
+    <label class="small">Short link
+      <span class="slug-input"><span class="prefix">/</span><input name="slug" value="${folder.slug ?? ""}" maxlength="60" placeholder="${slugify(folder.name.replace(/^\d+\.\s*/, "")) || "legal"}" autocapitalize="off" spellcheck="false"></span>
+    </label>
+    <button class="btn small ghost" type="submit">Save link</button>
+  </form>`;
+}
+
+/** The link, with a button that copies the full address. */
+function linkChip(slug: string | null) {
+  if (!slug) return "";
+  return html`<span class="link-chip"><span class="slug">/${slug}</span><button type="button" class="link-btn small" data-copy="/${slug}">Copy link</button></span>`;
 }
 
 /** Upload a new version in place: same id, link, folder, visibility, download setting and history. */
@@ -203,6 +221,7 @@ adminRoutes.get("/admin", async (c) => {
               <div class="folder-title">
                 <h2 class="h3">${folder.name} <span class="count">${real.length} ${real.length === 1 ? "file" : "files"}</span></h2>
                 ${folder.description ? html`<p class="small muted">${folder.description}</p>` : ""}
+                ${linkChip(folder.slug)}
               </div>
               <div class="folder-tags">
                 ${toReplace ? html`<span class="tag amber">${toReplace} to replace</span>` : ""}
@@ -220,7 +239,7 @@ adminRoutes.get("/admin", async (c) => {
               ${subs.map(
                 (sub) => html`<div class="subfolder admin" id="${sub.id}">
                   <div class="subfolder-head">
-                    <h3 class="subfolder-title">${sub.name}</h3>
+                    <h3 class="subfolder-title">${sub.name} ${linkChip(sub.slug)}</h3>
                     <span class="subfolder-actions">
                     <details class="menu">
                       <summary class="link-btn small">Add files</summary>
@@ -242,6 +261,7 @@ adminRoutes.get("/admin", async (c) => {
                           ${sub.watermark ? html`<input type="hidden" name="watermark" value="on">` : ""}
                           <button class="btn small ghost" type="submit">Rename</button>
                         </form>
+                        ${folderLinkForm(sub)}
                         <form method="post" action="/admin/folders/${sub.id}/delete" data-confirm="Delete the subfolder ${sub.name}?">
                           <button class="btn small danger wide" type="submit">Delete subfolder</button>
                         </form>
@@ -283,6 +303,7 @@ adminRoutes.get("/admin", async (c) => {
                         <button class="btn small" type="submit">Save folder</button>
                       </div>
                     </form>
+                    ${folderLinkForm(folder)}
                     <form method="post" action="/admin/folders/${folder.id}/delete" data-confirm="Delete the folder ${folder.name}?" class="settings-delete">
                       <button class="link-btn danger-text" type="submit">Delete folder</button>
                     </form>
@@ -331,7 +352,7 @@ function fileRows(list: FileRow[], folder: Folder, allFolders: Folder[], statsBy
         <span class="file-main">
           <a class="file-name" href="/admin/preview/f/${file.id}">${file.name}</a>
           <span class="file-meta">
-            ${file.slug ? html`<span class="slug">/d/${file.slug}</span> · ` : ""}${formatSize(file.size)} · ${formatDate(file.updated_at)} ·
+            ${file.slug ? html`${linkChip(file.slug)} · ` : ""}${formatSize(file.size)} · ${formatDate(file.updated_at)} ·
             <a href="/admin/files/${file.id}">${s ? `${s.opens} ${s.opens === 1 ? "open" : "opens"} by ${s.people} ${s.people === 1 ? "person" : "people"}` : "Not opened yet"}</a>
           </span>
           ${hiddenByType
@@ -409,6 +430,22 @@ adminRoutes.post("/admin/folders/:id", async (c) => {
     .bind(name, str(form.description), position, on(form.watermark) ? 1 : 0, c.req.param("id"))
     .run();
   return c.redirect(`/admin?m=folder_saved#${c.req.param("id")}`, 303);
+});
+
+adminRoutes.post("/admin/folders/:id/link", async (c) => {
+  const id = c.req.param("id");
+  const folder = await c.env.DB.prepare("SELECT id FROM folders WHERE id = ?").bind(id).first();
+  if (!folder) return c.text("Not found", 404);
+  const raw = str((await c.req.parseBody()).slug, 80);
+  if (!raw) {
+    await c.env.DB.prepare("UPDATE folders SET slug = NULL WHERE id = ?").bind(id).run();
+    return c.redirect(`/admin?m=slug_cleared#${id}`, 303);
+  }
+  const slug = slugify(raw);
+  const check = await checkLink(c.env, slug, { folder: id });
+  if (check !== "ok") return c.redirect(`/admin?m=slug_${check}#${id}`, 303);
+  await c.env.DB.prepare("UPDATE folders SET slug = ? WHERE id = ?").bind(slug, id).run();
+  return c.redirect(`/admin?m=slug_saved#${id}`, 303);
 });
 
 adminRoutes.post("/admin/folders/:id/delete", async (c) => {
@@ -492,9 +529,8 @@ adminRoutes.post("/admin/files/:id", async (c) => {
         return c.redirect(`${back}?m=slug_cleared${anchor}`, 303);
       }
       const slug = slugify(raw);
-      if (!isSlug(slug)) return c.redirect(`${back}?m=slug_invalid${anchor}`, 303);
-      const taken = await c.env.DB.prepare("SELECT 1 FROM files WHERE (slug = ?1 OR id = ?1) AND id != ?2").bind(slug, file.id).first();
-      if (taken) return c.redirect(`${back}?m=slug_taken${anchor}`, 303);
+      const check = await checkLink(c.env, slug, { file: file.id });
+      if (check !== "ok") return c.redirect(`${back}?m=slug_${check}${anchor}`, 303);
       await c.env.DB.prepare("UPDATE files SET slug = ? WHERE id = ?").bind(slug, file.id).run();
       return c.redirect(`${back}?m=slug_saved${anchor}`, 303);
     }
@@ -610,7 +646,7 @@ adminRoutes.get("/admin/files/:id", async (c) => {
         <section class="card two-col">
           <div>
             <h2 class="h3">Link</h2>
-            <p class="small muted">Investors with access open it at <strong>${c.env.APP_ORIGIN.replace(/^https?:\/\//, "")}/d/${fileRef(file)}</strong>. Nobody else can open it.</p>
+            <p class="small muted">Investors with access open it at <strong>${c.env.APP_ORIGIN.replace(/^https?:\/\//, "")}${file.slug ? `/${file.slug}` : `/d/${file.id}`}</strong>. Nobody else can open it.</p>
             ${slugForm(file, "file")}
           </div>
           <div>

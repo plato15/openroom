@@ -351,3 +351,5 @@ details.more input { width: 100%; margin: 4px 0 6px; }
 .template-sections { color: var(--muted); line-height: 1.5; }
 .subfolder-actions { display: inline-flex; gap: 14px; align-items: center; }
 .subfolder-actions > details.menu { display: inline-block; }
+.link-chip { display: inline-flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 13px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.link-chip .slug { font-weight: 600; color: var(--navy); }

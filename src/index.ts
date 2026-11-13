@@ -9,6 +9,7 @@ import { investorRoutes } from "./routes/investor";
 import { previewRoutes } from "./routes/preview";
 import { publicRoutes, testRoutes } from "./routes/public";
 import { setupRoutes } from "./routes/setup";
+import { shortLinkRoutes } from "./routes/shortlinks";
 import { needsSetup } from "./settings";
 
 const app = new Hono<AppEnv>();
@@ -97,6 +98,7 @@ app.route("/", publicRoutes);
 app.route("/", investorRoutes);
 app.route("/", previewRoutes);
 app.route("/", adminRoutes);
+app.route("/", shortLinkRoutes); // last: the room's own pages always win
 
 app.notFound((c) => c.html(messagePage(c.get("session") ?? null, "Page not found", "This page does not exist."), 404));
 app.onError((err, c) => {

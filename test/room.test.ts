@@ -212,7 +212,8 @@ describe("investor access", () => {
     for (const p of [`/room`, `/d/${file}`, `/d/${file}/view`, `/d/${file}/download`]) {
       const res = await req(p);
       expect(res.status).toBe(302);
-      expect(res.headers.get("location")).toBe("/");
+      // A document page remembers where you were going; nothing else does.
+      expect(res.headers.get("location")).toBe(p === `/d/${file}` ? `/?next=${encodeURIComponent(p)}` : "/");
     }
   });
 
@@ -965,5 +966,85 @@ describe("subfolders, templates and placeholders", () => {
     const denied = await req("/admin/templates", { cookie: await signIn(inv.email), form: { template: "board" } });
     expect(denied.headers.get("location")).toBe("/");
     expect(await count("SELECT COUNT(*) AS n FROM folders")).toBe(total);
+  });
+});
+
+describe("short links", () => {
+  async function setLink(cookie: string, kind: "file" | "folder", id: string, slug: string) {
+    return kind === "file"
+      ? req(`/admin/files/${id}`, { cookie, form: { action: "slug", slug } })
+      : req(`/admin/folders/${id}/link`, { cookie, form: { slug } });
+  }
+
+  it("opens a file at /name and a folder at /name, only for investors with access", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const file = await addFile(folder, { name: "Deck.pdf" });
+    const other = await addFolder();
+    const deck = uid("deck").toLowerCase().replace(/_/g, "-");
+    const legal = uid("legal").toLowerCase().replace(/_/g, "-");
+    const elsewhere = uid("elsewhere").toLowerCase().replace(/_/g, "-");
+    expect((await setLink(admin, "file", file, deck)).headers.get("location")).toContain("m=slug_saved");
+    expect((await setLink(admin, "folder", folder, legal)).headers.get("location")).toContain("m=slug_saved");
+    expect((await setLink(admin, "folder", other, elsewhere)).headers.get("location")).toContain("m=slug_saved");
+
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    const page = await req(`/${deck}`, { cookie });
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("Deck.pdf");
+    expect((await req(`/d/${deck}`, { cookie })).status).toBe(200); // old style still works
+    expect((await req(`/${legal}`, { cookie })).headers.get("location")).toBe(`/room#${folder}`);
+
+    // No access and no such link look exactly the same.
+    const denied = await req(`/${elsewhere}`, { cookie });
+    const unknown = await req("/no-such-link-here", { cookie });
+    expect(denied.status).toBe(404);
+    expect(unknown.status).toBe(404);
+    expect(await denied.text()).toBe(await unknown.text());
+
+    // Admins land on their own view of it.
+    expect((await req(`/${deck}`, { cookie: admin })).headers.get("location")).toBe(`/admin/preview/f/${file}`);
+  });
+
+  it("brings people back to the link after signing in, and nowhere else", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const file = await addFile(folder);
+    const slug = uid("cap").toLowerCase().replace(/_/g, "-");
+    await setLink(admin, "file", file, slug);
+    const inv = await addInvestor({ folders: [folder] });
+
+    const out = await req(`/${slug}`);
+    expect(out.headers.get("location")).toBe(`/?next=%2F${slug}`);
+    expect(await (await req(`/?next=%2F${slug}`)).text()).toContain(`name="next" value="/${slug}"`);
+    await req("/login", { form: { email: inv.email, next: `/${slug}` } });
+    const link = (await lastLinkFor(inv.email))!;
+    expect(link).toContain(`next=%2F${slug}`);
+    const t = new URL(link).searchParams.get("t")!;
+    const res = await req("/auth", { form: { t, next: `/${slug}` } });
+    expect(res.headers.get("location")).toBe(`/${slug}`);
+
+    // A crafted destination is ignored.
+    for (const bad of ["//evil.example", "https://evil.example", "/admin", "/d/../admin", "/\\evil.example"]) {
+      const page = await (await req(`/?next=${encodeURIComponent(bad)}`)).text();
+      expect(page).not.toContain('name="next"');
+    }
+  });
+
+  it("refuses room words and names already taken by a file or folder", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const a = await addFile(folder);
+    const b = await addFile(folder);
+    for (const word of ["admin", "room", "setup", "login", "static", "settings"]) {
+      expect((await setLink(admin, "file", a, word)).headers.get("location")).toContain("m=slug_reserved");
+    }
+    expect((await setLink(admin, "file", a, "d")).headers.get("location")).toContain("m=slug_invalid");
+    const name = uid("shared").toLowerCase().replace(/_/g, "-");
+    await setLink(admin, "folder", folder, name);
+    expect((await setLink(admin, "file", b, name)).headers.get("location")).toContain("m=slug_taken");
+    // The room's own pages always win over links.
+    expect((await req("/admin", { cookie: admin })).status).toBe(200);
   });
 });

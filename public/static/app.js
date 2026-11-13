@@ -108,3 +108,18 @@ document.addEventListener("change", (e) => {
     input.form.requestSubmit();
   }
 });
+
+// Copy a short link: the full address, ready to paste into an email or chat.
+document.addEventListener("click", async (e) => {
+  const b = e.target instanceof Element ? e.target.closest("[data-copy]") : null;
+  if (!(b instanceof HTMLElement)) return;
+  const url = location.origin + (b.dataset.copy || "");
+  try {
+    await navigator.clipboard.writeText(url);
+    b.textContent = "Copied";
+  } catch {
+    window.prompt("Copy this link:", url);
+    return;
+  }
+  setTimeout(() => (b.textContent = "Copy link"), 1800);
+});

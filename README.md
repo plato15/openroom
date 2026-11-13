@@ -33,7 +33,8 @@ Using an AI coding agent to set it up? Point it at [AGENTS.md](AGENTS.md).
 - **Stamping**: every PDF page, spreadsheet and Word page carries the viewer's email and the date.
 - **Activity**: every sign-in, view and download, per investor and per file.
 - **Preview** the room exactly as a given investor sees it, without signing out.
-- Optional **custom link** per file (`/d/pitch-deck`), and **replace with a new version** that keeps the link, access and history.
+- **Short links** for any file or folder, like `dataroom.acme.com/deck` or `dataroom.acme.com/legal`, with a **Copy link** button. Someone who is not signed in signs in first and lands right on it. A link is only a nicer address: access is checked on every open, and a link to something you cannot see looks exactly like one that does not exist. Names the room uses itself (`admin`, `room`, `setup`...) cannot be links.
+- **Replace with a new version** that keeps the link, access and history.
 - End dates per investor, instant revoke, invites by email.
 - Files named "draft" or "internal" upload hidden and cannot be published until renamed.
 - **Setup screen** the first time the room opens: your email, what the room is for, then your name, colours and logo. Nothing to configure while deploying.
@@ -266,6 +267,7 @@ The suite runs twice: once in the real Workers runtime (Miniflare) and once agai
 | `src/routes/branding.ts` | The Settings tab: branding and email |
 | `src/settings.ts` | Settings saved in the database: owner, email, who is admin |
 | `src/templates.ts` | Room templates: folders, subfolders and placeholder pages |
+| `src/links.ts`, `src/routes/shortlinks.ts` | Short links (`/deck`), reserved names, where to go after sign-in |
 | `src/render.ts` | Excel, CSV and Word as read-only pages |
 | `src/watermark.ts` | PDF stamping |
 | `src/email.ts` | Resend, SES and SMTP sending, and the two emails |
