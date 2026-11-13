@@ -365,3 +365,8 @@ details.fold:not([open]) > summary.folder-head .folder-title p { display: none; 
 details.fold > summary.folder-head:hover .folder-title .h3 { color: var(--blue-dark); }
 .fold-all { display: inline-flex; gap: 14px; margin-right: 8px; }
 .row-between > .actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+/* Update notice */
+.notice.update { background: #eef4ff; color: var(--navy); border: 1px solid #c7d7fe; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+.update-links { display: inline-flex; gap: 16px; }
+.update-links a { font-weight: 600; }

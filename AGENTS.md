@@ -39,6 +39,8 @@ Then they open `https://<DOMAIN>` for the setup screen.
 - The domain's DNS must point at the server and ports 80/443 must be open, or Caddy cannot get a certificate.
 - Data lives in the `openroom-data` volume. Tell them to back it up.
 
+**Updating a room:** Docker, `docker compose pull && docker compose up -d`. Cloudflare, the **Update Openroom** workflow in the Actions tab of their copy (or `bash scripts/update-openroom.sh` and push). Never hand-edit `database_id`, `name` or `bucket_name` in their `wrangler.jsonc`: the script keeps them, and losing them points the room at a new, empty database.
+
 **Never** put secrets in `wrangler.jsonc`, a committed file, a URL or a chat log. Use `wrangler secret put` or `.env` (git-ignored).
 
 ## Changing the code

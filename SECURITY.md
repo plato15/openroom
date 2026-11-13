@@ -25,6 +25,12 @@ A room deployed without `ADMIN_EMAILS` has no admin. Until someone claims it, ev
 - The risk is the short window between deploying and claiming: someone who finds the brand new address first could claim it. Claim your room straight after deploying, or set `ADMIN_EMAILS` before the first visit to skip claiming. If someone else claimed it, delete the Worker (or the Docker volume) and deploy again: nothing of yours was in it yet.
 - The Resend key from the setup screen (or the Settings tab) is stored in the room's database, readable only by the app, never shown again in the page. A key set as a deployment secret takes priority.
 
+## Outgoing requests
+
+The server makes two kinds of outgoing request: sending email (Resend, SES or SMTP), and once a day an anonymous request to GitHub's public list of Openroom releases, to tell admins about updates. Nothing about the room, its documents or its people is sent. `UPDATE_CHECK=false` turns the release check off. Pages load fonts from Google Fonts; nothing else.
+
+The **Update Openroom** workflow runs only in your own GitHub copy, only when you start it (or on a schedule you turn on). It fetches Openroom's public releases, and pushes to your copy with GitHub's own token for that run; it never sees your Cloudflare or Resend keys.
+
 ## Running it yourself with Docker
 
 - `APP_ORIGIN` must be set and use HTTPS (the compose file puts Caddy in front for this). Sign-in links are built from it, never from the request's Host header.

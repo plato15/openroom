@@ -23,6 +23,8 @@ export type Env = {
   BRAND_FONT_BODY?: string;
   BRAND_FONT_DISPLAY?: string;
   SHOW_CREDIT?: string;
+  /** "false" stops the daily check for a new Openroom version (see src/updates.ts). */
+  UPDATE_CHECK?: string;
   AWS_ACCESS_KEY_ID?: string;
   AWS_SECRET_ACCESS_KEY?: string;
 };

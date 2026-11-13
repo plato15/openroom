@@ -8,6 +8,8 @@ permissions:
   contents: read
 jobs:
   check:
+    # Releases are made from Openroom itself, never from a room's copy of it.
+    if: github.repository == 'plato15/openroom'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}

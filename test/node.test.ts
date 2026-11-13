@@ -98,3 +98,32 @@ describe("Resend errors", () => {
     expect(resendFailure(500, "upstream exploded")).toEqual({ reason: "other", message: "upstream exploded" });
   });
 });
+
+describe("version compare", () => {
+  it("knows which release is newer", async () => {
+    const { newerThan } = await import("../src/updates");
+    expect(newerThan("0.4.0", "0.3.0")).toBe(true);
+    expect(newerThan("0.10.0", "0.9.9")).toBe(true);
+    expect(newerThan("v1.0.0", "0.99.0")).toBe(true);
+    expect(newerThan("0.3.0", "0.3.0")).toBe(false);
+    expect(newerThan("0.2.9", "0.3.0")).toBe(false);
+  });
+
+  it("keeps a room's own names and ids when its config is updated", async () => {
+    // @ts-expect-error plain .mjs script without types
+    const { keepRoomConfig, parseJsonc } = await import("../scripts/keep-room-config.mjs");
+    const old = parseJsonc(`{ // mine
+      "name": "acme-room", "routes": [{ "pattern": "dataroom.acme.com", "custom_domain": true }],
+      "d1_databases": [{ "binding": "DB", "database_name": "acme-db", "database_id": "abc", }],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "acme-files" }], }`);
+    const next = parseJsonc(`{ "name": "openroom", "workers_dev": true, "keep_vars": true, /* new */
+      "d1_databases": [{ "binding": "DB", "database_name": "openroom", "migrations_dir": "migrations" }],
+      "r2_buckets": [{ "binding": "FILES", "bucket_name": "openroom-files" }] }`);
+    const merged = keepRoomConfig(old, next);
+    expect(merged.name).toBe("acme-room");
+    expect(merged.routes[0].pattern).toBe("dataroom.acme.com");
+    expect(merged.d1_databases[0]).toEqual({ binding: "DB", database_name: "acme-db", database_id: "abc", migrations_dir: "migrations" });
+    expect(merged.r2_buckets[0].bucket_name).toBe("acme-files");
+    expect(merged.keep_vars).toBe(true);
+  });
+});

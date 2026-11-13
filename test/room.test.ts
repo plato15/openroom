@@ -1075,3 +1075,30 @@ describe("short links", () => {
     expect((await req("/admin", { cookie: admin })).status).toBe(200);
   });
 });
+
+describe("update notice", () => {
+  const keep = (latest: string) =>
+    env.DB.prepare(
+      "INSERT INTO settings (key, value, updated_at) VALUES ('update_check', ?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?1, updated_at = ?2",
+    )
+      .bind(JSON.stringify({ latest, url: `https://github.com/plato15/openroom/releases/tag/v${latest}`, checkedAt: Date.now() }), Date.now())
+      .run();
+
+  it("tells admins about a newer release, and nobody else", async () => {
+    const admin = await adminSession();
+    await keep("9.9.9");
+    const docs = await (await req("/admin", { cookie: admin })).text();
+    expect(docs).toContain("Openroom 9.9.9 is available");
+    expect(docs).toContain("https://github.com/plato15/openroom#updating");
+    expect(await (await req("/admin/branding", { cookie: admin })).text()).toContain("Openroom 9.9.9 is available");
+    const inv = await addInvestor({ folders: [await addFolder()] });
+    expect(await (await req("/room", { cookie: await signIn(inv.email) })).text()).not.toContain("is available");
+
+    // Same version: no notice; the Settings page says which version this is.
+    const { VERSION } = await import("../src/version");
+    await keep(VERSION);
+    expect(await (await req("/admin", { cookie: admin })).text()).not.toContain("is available");
+    expect(await (await req("/admin/branding", { cookie: admin })).text()).toContain(`Openroom ${VERSION}`);
+    await env.DB.prepare("DELETE FROM settings WHERE key = 'update_check'").run();
+  });
+});
