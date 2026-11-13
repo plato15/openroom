@@ -4,6 +4,8 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+## 0.2.0 (13 Nov 2026)
+
 ### Changed
 - The Deploy to Cloudflare form now asks for two things only: your admin email and a Resend key. Every other setting has a default in the code and can be added later in the Cloudflare dashboard, where it stays through updates (`keep_vars`).
 
