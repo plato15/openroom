@@ -2,6 +2,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { html } from "hono/html";
 import { fileForAdmin, fileRef, orientationFor, renderKey, serveFile, visibleToInvestor } from "../access";
 import { documentFrame } from "../views";
+import { brandingRoutes } from "./branding";
 import { isAdmin } from "../auth";
 import { inviteMail, sendMail } from "../email";
 import type { AppEnv, FileRow, Folder, Investor } from "../env";
@@ -36,6 +37,7 @@ const adminOnly: MiddlewareHandler<AppEnv> = async (c, next) => {
 };
 adminRoutes.use("/admin", adminOnly);
 adminRoutes.use("/admin/*", adminOnly);
+adminRoutes.route("/", brandingRoutes);
 
 /** Flash messages are fixed strings picked by code, so nothing from the URL is echoed back. */
 const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
@@ -63,7 +65,7 @@ const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
   investor_email: ["error", "Enter a valid email address."],
   investor_is_admin: ["error", "That email is an admin email."],
   invite_sent: ["ok", "Invite sent."],
-  invite_failed: ["error", "The invite email could not be sent. Check the AWS keys."],
+  invite_failed: ["error", "The invite email could not be sent. Check the email settings (see README, Email)."],
   revoked: ["ok", "Access revoked. They are signed out everywhere."],
   restored: ["ok", "Access restored."],
   investor_deleted: ["ok", "Investor removed."],

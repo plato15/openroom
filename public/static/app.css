@@ -1,8 +1,8 @@
 :root {
-  --navy: #0b1b3f;
-  --navy-2: #13285a;
-  --blue: #1e97f1;
-  --blue-dark: #0f7ad0;
+  --navy: #0f172a;
+  --navy-2: #1e293b;
+  --blue: #2563eb;
+  --blue-dark: #1e51c1;
   --bg: #f4f6fa;
   --card: #ffffff;
   --text: #0f172a;
@@ -12,8 +12,8 @@
   --red: #d63939;
   --grey: #6b7280;
   --radius: 16px;
-  --font: "Parkinsans", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --display: "Boldonse", "Parkinsans", -apple-system, sans-serif;
+  --font: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --display: "Inter", -apple-system, sans-serif;
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -241,3 +241,26 @@ a.link-btn { text-decoration: none; }
   .folder-head { align-items: flex-start; }
   .folder-head > .count { width: 100%; padding-left: 48px; margin-top: -6px; }
 }
+
+/* Branding tab */
+.brand-preview { padding: 0; overflow: hidden; }
+.bp-bar { background: var(--navy); display: flex; align-items: center; gap: 10px; padding: 14px 16px; }
+.bp-bar img { height: 22px; width: auto; display: block; }
+.bp-body { padding: 16px; }
+.bp-body .h3 { margin: 0 0 4px; }
+.color-field { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.color-field input[type=color] { width: 48px; height: 40px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer; }
+.color-field code { font-size: 13px; color: var(--muted); }
+.logo-grid { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 720px) { .logo-grid { grid-template-columns: repeat(3, 1fr); } }
+.logo-slot { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.logo-slot p { margin: 0; }
+.logo-view { height: 72px; border-radius: 10px; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; padding: 12px; }
+.logo-view.dark { background: var(--navy); border-color: var(--navy); }
+.logo-view.light { background: #fff; }
+.logo-view img { max-height: 40px; max-width: 100%; width: auto; }
+.logo-view img.icon { height: 32px; width: 32px; object-fit: contain; }
+.logo-slot input[type=file] { width: 100%; }
+.hint { font-weight: 400; }
+/* Four admin tabs fit on a phone without scrolling. */
+@media (max-width: 420px) { .tabs { gap: 0; } .tabs a { padding: 10px 10px; font-size: 13px; } }

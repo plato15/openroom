@@ -8,6 +8,28 @@ export type Mail = { to: string; subject: string; text: string; html: string; li
 /** Mail captured in tests and local dev instead of being sent. */
 export const outbox: Mail[] = [];
 
+/**
+ * SMTP only exists in the Node build (Workers cannot open raw sockets to mail servers easily),
+ * so the Node entry registers a sender here at start-up.
+ */
+type SmtpSender = (from: string, mail: Mail) => Promise<void>;
+let smtpSender: SmtpSender | null = null;
+export const registerSmtp = (send: SmtpSender) => {
+  smtpSender = send;
+};
+
+export type MailProvider = "resend" | "smtp" | "ses" | null;
+
+/** MAIL_PROVIDER picks one outright; otherwise the first one with its keys set wins. */
+export function mailProvider(env: Env): MailProvider {
+  const chosen = (env.MAIL_PROVIDER ?? "").trim().toLowerCase();
+  if (chosen === "resend" || chosen === "smtp" || chosen === "ses") return chosen;
+  if (env.RESEND_API_KEY) return "resend";
+  if (env.SMTP_URL && smtpSender) return "smtp";
+  if (env.AWS_ACCESS_KEY_ID && env.AWS_SECRET_ACCESS_KEY) return "ses";
+  return null;
+}
+
 export async function sendMail(env: Env, mail: Mail): Promise<boolean> {
   // Mail is only captured instead of sent on a local address; anywhere else it is really sent.
   if (env.ENVIRONMENT !== "production" && isLocalOrigin(env.APP_ORIGIN)) {
@@ -15,17 +37,49 @@ export async function sendMail(env: Env, mail: Mail): Promise<boolean> {
     if (env.ENVIRONMENT === "local") console.log(`[mail to ${mail.to}] ${mail.subject} ${mail.link ?? ""}`);
     return true;
   }
-  if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) {
-    console.error("mail not sent: AWS keys are not set");
+  const provider = mailProvider(env);
+  try {
+    if (provider === "resend") return await sendResend(env, mail);
+    if (provider === "smtp") return await sendSmtp(env, mail);
+    if (provider === "ses") return await sendSes(env, mail);
+  } catch (err) {
+    console.error(`mail not sent: ${provider} ${(err as Error).message}`);
     return false;
   }
+  console.error("mail not sent: no email provider is set up (RESEND_API_KEY, SMTP_URL or AWS keys)");
+  return false;
+}
+
+async function sendResend(env: Env, mail: Mail): Promise<boolean> {
+  if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY is not set");
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
+    body: JSON.stringify({ from: env.MAIL_FROM, to: [mail.to], subject: mail.subject, text: mail.text, html: mail.html }),
+  });
+  if (!res.ok) {
+    console.error(`mail not sent: Resend ${res.status} ${(await res.text()).slice(0, 300)}`);
+    return false;
+  }
+  return true;
+}
+
+async function sendSmtp(env: Env, mail: Mail): Promise<boolean> {
+  if (!smtpSender || !env.SMTP_URL) throw new Error("SMTP is only available in the Docker build, with SMTP_URL set");
+  await smtpSender(env.MAIL_FROM, mail);
+  return true;
+}
+
+async function sendSes(env: Env, mail: Mail): Promise<boolean> {
+  if (!env.AWS_ACCESS_KEY_ID || !env.AWS_SECRET_ACCESS_KEY) throw new Error("AWS keys are not set");
+  const region = env.SES_REGION || "us-east-1";
   const aws = new AwsClient({
     accessKeyId: env.AWS_ACCESS_KEY_ID,
     secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
     service: "ses",
-    region: env.SES_REGION,
+    region,
   });
-  const res = await aws.fetch(`https://email.${env.SES_REGION}.amazonaws.com/v2/email/outbound-emails`, {
+  const res = await aws.fetch(`https://email.${region}.amazonaws.com/v2/email/outbound-emails`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -58,11 +112,13 @@ function shell(origin: string, heading: string, paragraphs: string[], button?: {
   return `<!doctype html><html><body style="margin:0;background:#F4F6FA;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F6FA;padding:32px 12px"><tr><td align="center">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#ffffff;border-radius:16px;overflow:hidden">
-<tr><td style="background:#ffffff;padding:24px 28px 18px;border-bottom:3px solid ${b.dark}"><img src="${esc(origin)}/static/logo-email.png" alt="${esc(b.name)}" height="28" style="display:block;height:28px;border:0"></td></tr>
+<tr><td style="background:#ffffff;padding:24px 28px 18px;border-bottom:3px solid ${b.dark}">${b.emailLogo
+  ? `<img src="${esc(origin)}${esc(b.emailLogo)}" alt="${esc(b.name)}" height="28" style="display:block;height:28px;border:0">`
+  : `<span style="font-size:18px;font-weight:700;color:${b.dark}">${esc(b.name)}</span>`}</td></tr>
 <tr><td style="padding:28px">
 <h1 style="margin:0 0 16px;font-size:20px;line-height:1.3;color:${b.dark}">${esc(heading)}</h1>
 ${body}${cta}
-<p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#94A3B8">${esc(b.legalName)}. Confidential. This message was sent to you because you were given access to the ${esc(b.roomName)}.</p>
+<p style="margin:24px 0 0;font-size:12px;line-height:1.5;color:#94A3B8">${esc(b.legalSentence)} Confidential. This message was sent to you because you were given access to the ${esc(b.roomName)}.</p>
 </td></tr></table></td></tr></table></body></html>`;
 }
 

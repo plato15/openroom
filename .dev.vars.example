@@ -1,4 +1,6 @@
-# Copy to .dev.vars for `npm run dev`. Local mode prints sign-in links on the page instead of emailing.
-ENVIRONMENT=local
-APP_ORIGIN=http://localhost:8799
+# Secrets. The Deploy to Cloudflare button asks for these; for local dev, copy this file to .dev.vars.
+# Who can manage the room (comma separated).
 ADMIN_EMAILS=you@example.com
+# Email: a Resend API key (resend.com). Using Amazon SES instead? Leave this empty and set
+# AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY (see README).
+RESEND_API_KEY=

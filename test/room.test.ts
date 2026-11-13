@@ -1,5 +1,7 @@
-import { env } from "cloudflare:test";
-import { exports } from "cloudflare:workers";
+// The same tests run against the Worker (vitest.config.ts) and the Node build (vitest.node.config.ts);
+// each config points "./harness" at its own runtime.
+import { env, fetchApp } from "./harness";
+import app from "../src/index";
 import JSZip from "jszip";
 import { PDFDocument } from "pdf-lib";
 import * as XLSX from "xlsx";
@@ -22,7 +24,7 @@ async function req(path: string, opts: Opts = {}) {
     for (const [k, v] of Object.entries(opts.form)) for (const x of Array.isArray(v) ? v : [v]) p.append(k, x);
     body = p;
   }
-  return (exports as unknown as { default: Fetcher }).default.fetch(new Request(ORIGIN + path, { method, headers, body, redirect: "manual" }));
+  return fetchApp(new Request(ORIGIN + path, { method, headers, body, redirect: "manual" }));
 }
 
 async function lastLinkFor(email: string): Promise<string | null> {
@@ -616,7 +618,7 @@ describe("admin", () => {
     const page = await (await req("/")).text();
     expect(page).toContain("Openroom data room");
     expect(page).toContain("family=Inter");
-    expect(page).toContain('href="/theme.css"');
+    expect(page).toMatch(/href="\/theme\.css\?v=[a-z0-9]+"/);
     expect(page).toContain("Powered by");
     const css = await (await req("/theme.css")).text();
     expect(css).toContain("--blue:#2563EB");
@@ -629,5 +631,117 @@ describe("admin", () => {
     expect(res.headers.get("x-robots-tag")).toContain("noindex");
     expect(res.headers.get("referrer-policy")).toBe("same-origin");
     expect(res.headers.get("strict-transport-security")).toBeTruthy();
+  });
+});
+
+describe("branding tab", () => {
+  const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (ch) => ch.charCodeAt(0));
+  const SVG = new TextEncoder().encode(`<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script></svg>`);
+  const logo = (bytes: Uint8Array, name: string) => {
+    const fd = new FormData();
+    fd.append("file", new File([bytes], name));
+    return fd;
+  };
+
+  it("is for admins only", async () => {
+    const inv = await addInvestor();
+    const cookie = await signIn(inv.email);
+    expect((await req("/admin/branding", { cookie })).status).toBe(404);
+    expect((await req("/admin/branding", { cookie, form: { name: "Hacked" } })).status).toBe(404);
+    expect((await req("/admin/branding/reset", { cookie, form: {} })).status).toBe(404);
+    expect((await req("/admin/branding")).status).toBe(302);
+    expect((await req("/admin/branding", { form: { name: "Hacked" } })).status).toBe(302);
+  });
+
+  it("changes names, colours and fonts with no redeploy, and checks every value", async () => {
+    const admin = await adminSession();
+    const before = await (await req("/")).text();
+    let res = await req("/admin/branding", { cookie: admin, form: { name: "Acme", legalName: "Acme Inc.", inviter: "Ada at Acme", color: "#ff0000", dark: "#112233", fontBody: "DM Sans", fontDisplay: "" } });
+    expect(res.headers.get("location")).toContain("m=saved");
+    const page = await (await req("/")).text();
+    expect(page).toContain("Acme data room");
+    expect(page).toContain("Acme Inc. Confidential.");
+    expect(page).not.toContain("Inc..");
+    // The stylesheet address changes with the theme, so browsers never keep the old colours.
+    expect(page.match(/theme\.css\?v=(\w+)/)?.[1]).not.toBe(before.match(/theme\.css\?v=(\w+)/)?.[1]);
+    expect(page).toContain("family=DM+Sans");
+    const css = await (await req("/theme.css")).text();
+    expect(css).toContain("--blue:#FF0000");
+    expect(css).toContain("--navy:#112233");
+
+    for (const [form, code] of [
+      [{ color: "red" }, "m=color"],
+      [{ color: "#ff00001;}body{display:none" }, "m=color"],
+      [{ fontBody: 'Inter";}body{x:y' }, "m=font"],
+      [{ name: "<script>" }, "m=text"],
+    ] as const) {
+      res = await req("/admin/branding", { cookie: admin, form });
+      expect(res.headers.get("location")).toContain(code);
+    }
+    expect(await (await req("/theme.css")).text()).toContain("--blue:#FF0000");
+  });
+
+  it("takes PNG and SVG logos, never serves an SVG as a page, and refuses anything else", async () => {
+    const admin = await adminSession();
+    let res = await req("/admin/branding/logo/header", { cookie: admin, form: logo(PNG, "logo.png") });
+    expect(res.headers.get("location")).toContain("m=logo_saved");
+    const page = await (await req("/")).text();
+    const src = page.match(/src="(\/brand\/header\?v=\d+)"/)?.[1];
+    expect(src).toBeTruthy();
+    res = await req(src!);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG);
+
+    res = await req("/admin/branding/logo/icon", { cookie: admin, form: logo(SVG, "icon.svg") });
+    expect(res.headers.get("location")).toContain("m=logo_saved");
+    res = await req("/brand/icon");
+    expect(res.headers.get("content-type")).toBe("image/svg+xml");
+    expect(res.headers.get("content-disposition")).toContain("attachment");
+    expect(res.headers.get("content-security-policy")).toContain("sandbox");
+    expect(res.headers.get("content-security-policy")).toContain("default-src 'none'");
+
+    // Emails cannot show SVG; an HTML file named .png is not an image; big files are refused.
+    res = await req("/admin/branding/logo/email", { cookie: admin, form: logo(SVG, "logo.svg") });
+    expect(res.headers.get("location")).toContain("m=logo_type");
+    res = await req("/admin/branding/logo/header", { cookie: admin, form: logo(new TextEncoder().encode("<html><script>alert(1)</script>"), "logo.png") });
+    expect(res.headers.get("location")).toContain("m=logo_type");
+    const big = new Uint8Array(600 * 1024);
+    big.set(PNG);
+    res = await req("/admin/branding/logo/header", { cookie: admin, form: logo(big, "big.png") });
+    expect(res.headers.get("location")).toContain("m=logo_big");
+    expect((await req("/brand/nope")).status).toBe(404);
+    expect((await req("/brand/email")).status).toBe(404);
+  });
+
+  it("uses an uploaded PNG in emails, and resets to the deployment defaults", async () => {
+    const admin = await adminSession();
+    await req("/admin/branding/logo/email", { cookie: admin, form: logo(PNG, "mail.png") });
+    const inv = await addInvestor();
+    await requestLink(inv.email);
+    const mails = (await (await req("/__test/outbox")).json()) as { to: string; html: string }[];
+    expect(mails.filter((m) => m.to === inv.email).pop()!.html).toMatch(/https:\/\/dataroom\.test\/brand\/email\?v=\d+/);
+
+    const res = await req("/admin/branding/reset", { cookie: admin, form: {} });
+    expect(res.headers.get("location")).toContain("m=reset");
+    const page = await (await req("/")).text();
+    expect(page).toContain("Openroom data room");
+    expect(page).toContain("/static/logo-white.svg");
+    expect((await req("/brand/header")).status).toBe(404);
+    expect(await (await req("/theme.css")).text()).toContain("--blue:#2563EB");
+  });
+});
+
+describe("blank APP_ORIGIN (Cloudflare one-click deploys)", () => {
+  const ctx = { waitUntil() {}, passThroughOnException() {}, props: {} } as unknown as ExecutionContext;
+  const post = (url: string, origin: string) =>
+    app.fetch(new Request(url, { method: "POST", headers: { origin }, body: new URLSearchParams({ email: "nobody@nowhere.test" }) }), { ...env, APP_ORIGIN: "" }, ctx);
+
+  it("uses the address the room was opened on, and still blocks other sites", async () => {
+    const own = "https://openroom.someone.workers.dev";
+    const res = await post(`${own}/login`, own);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("strict-transport-security")).toBeTruthy();
+    expect((await post(`${own}/login`, "https://evil.example")).status).toBe(403);
   });
 });

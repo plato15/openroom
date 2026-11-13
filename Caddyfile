@@ -1,0 +1,8 @@
+# Caddy gets and renews an HTTPS certificate for your domain by itself.
+{$DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy openroom:3000
+}
