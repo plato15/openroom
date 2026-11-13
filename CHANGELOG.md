@@ -4,16 +4,19 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+## 0.4.0 (13 Nov 2026)
+
 ### Added
-- **Request access.** A link on the sign-in page lets people ask for access. Admins are emailed and approve on the Investors page (choosing folders, which sends the invite) or decline. The page never reveals who already has access.
-- **"Openroom X is available"** for admins on the Documents and Settings pages, from a daily check of Openroom's public releases on GitHub (`UPDATE_CHECK=false` turns it off). Settings shows the current version.
+- **Request access.** A link on the sign-in page lets people ask for access (name, email, firm, a note). Admins are emailed and approve on the Investors page, choosing the folders, which sends the invite, or decline. The page never reveals who already has access.
+- **"Openroom X is available"** for admins on the Documents and Settings pages, from a daily check of Openroom's public releases on GitHub. `UPDATE_CHECK=false` turns it off. Settings shows the current version.
 - **Update Openroom**, a one-click update from the Actions tab of your copy on GitHub. Works for forks and for copies made by the Deploy button, keeps your Worker name, database, bucket and domains, and stops without changing anything if it cannot update safely. Optional weekly schedule.
 
 ### Changed
 - The release workflow only runs in Openroom itself, never in a room's copy.
 
-### Upgrading
-- Rooms on 0.3.0 get the Update Openroom button with this update, done the old way once (see README, "Updating").
+### Upgrading from 0.3.0
+- Database change 0008 applies by itself.
+- This update brings the **Update Openroom** button, so do it the old way once: **Sync fork** on a fork, `docker compose pull && docker compose up -d` with Docker, or `git pull && npm run deploy` from the command line. Copies made by the Deploy button: see README, "Updating". From 0.4.0 on, updates are one click.
 
 ## 0.3.0 (13 Nov 2026)
 
