@@ -1,0 +1,41 @@
+{
+  // Openroom: one Cloudflare Worker, one D1 database, one private R2 bucket.
+  // Copy this file, then set the values marked CHANGE (see README, "Deploy").
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "openroom",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  // CHANGE: your room's address. The domain must be a zone on your Cloudflare account.
+  "routes": [{ "pattern": "dataroom.example.com", "custom_domain": true }],
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "openroom",
+      // CHANGE: the id printed by `npx wrangler d1 create openroom`.
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "openroom-files" }],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "APP_ORIGIN": "https://dataroom.example.com", // CHANGE: same address as the route, with https://
+    "MAIL_FROM": "Data Room <noreply@example.com>", // CHANGE: a sender verified in Amazon SES
+    "SES_REGION": "us-east-1", // CHANGE: the SES region where that sender is verified and out of the sandbox
+    // Branding. Logos live in public/static/ (logo-white.svg, icon.svg, logo-email.png).
+    "BRAND_NAME": "Openroom",
+    "BRAND_LEGAL_NAME": "Openroom",
+    "BRAND_INVITER": "The Openroom team",
+    "BRAND_COLOR": "#2563EB",
+    "BRAND_DARK": "#0F172A",
+    "BRAND_FONT_BODY": "Inter",
+    "BRAND_FONT_DISPLAY": "Inter",
+    "SHOW_CREDIT": "true"
+  },
+  // Secrets (npx wrangler secret put NAME): ADMIN_EMAILS, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+  "observability": { "enabled": true }
+}

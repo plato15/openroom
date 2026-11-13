@@ -1,0 +1,46 @@
+{
+  "name": "openroom",
+  "version": "0.1.0",
+  "scripts": {
+    "test": "vitest run",
+    "dev": "wrangler dev --port 8799 --infer-origin-from-routes=false",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc -p .",
+    "db:migrate": "wrangler d1 migrations apply openroom --remote",
+    "db:migrate:local": "wrangler d1 migrations apply openroom --local"
+  },
+  "type": "module",
+  "dependencies": {
+    "aws4fetch": "^1.0.20",
+    "hono": "^4.13.18",
+    "mammoth": "^1.13.0",
+    "pdf-lib": "^1.17.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.8.1",
+    "@cloudflare/workers-types": "^5.20261113.1",
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.161.0"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "description": "An open-source investor data room on Cloudflare Workers: email sign-in links, folder-by-folder access, stamped documents, view tracking.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/plato15/openroom.git"
+  },
+  "keywords": [
+    "data-room",
+    "dataroom",
+    "due-diligence",
+    "investors",
+    "cloudflare-workers",
+    "d1",
+    "r2"
+  ]
+}

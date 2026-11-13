@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `npm run dev`. Local mode prints sign-in links on the page instead of emailing.
+ENVIRONMENT=local
+APP_ORIGIN=http://localhost:8799
+ADMIN_EMAILS=you@example.com

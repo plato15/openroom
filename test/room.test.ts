@@ -1,0 +1,633 @@
+import { env } from "cloudflare:test";
+import { exports } from "cloudflare:workers";
+import JSZip from "jszip";
+import { PDFDocument } from "pdf-lib";
+import * as XLSX from "xlsx";
+import { describe, expect, it } from "vitest";
+
+const ORIGIN = "https://dataroom.test";
+const ADMIN = "admin@example.test";
+
+type Opts = { method?: string; form?: Record<string, string | string[]> | FormData; cookie?: string; origin?: string | null };
+
+async function req(path: string, opts: Opts = {}) {
+  const headers = new Headers();
+  if (opts.cookie) headers.set("cookie", opts.cookie);
+  const method = opts.method ?? (opts.form ? "POST" : "GET");
+  if (method !== "GET" && opts.origin !== null) headers.set("origin", opts.origin ?? ORIGIN);
+  let body: BodyInit | undefined;
+  if (opts.form instanceof FormData) body = opts.form;
+  else if (opts.form) {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(opts.form)) for (const x of Array.isArray(v) ? v : [v]) p.append(k, x);
+    body = p;
+  }
+  return (exports as unknown as { default: Fetcher }).default.fetch(new Request(ORIGIN + path, { method, headers, body, redirect: "manual" }));
+}
+
+async function lastLinkFor(email: string): Promise<string | null> {
+  const mails = (await (await req("/__test/outbox")).json()) as { to: string; link?: string }[];
+  const mine = mails.filter((m) => m.to === email && m.link);
+  return mine.length ? mine[mine.length - 1].link! : null;
+}
+
+async function requestLink(email: string) {
+  const res = await req("/login", { form: { email } });
+  expect(res.status).toBe(200);
+  return lastLinkFor(email);
+}
+
+async function signIn(email: string): Promise<string> {
+  const link = await requestLink(email);
+  expect(link, `no sign-in link for ${email}`).toBeTruthy();
+  const token = new URL(link!).searchParams.get("t")!;
+  const res = await req("/auth", { form: { t: token } });
+  expect(res.status).toBe(303);
+  const cookie = res.headers.get("set-cookie")!;
+  expect(cookie).toContain("HttpOnly");
+  expect(cookie).toContain("Secure");
+  return cookie.split(";")[0];
+}
+
+let adminCookie: string | null = null;
+/** One admin session for the whole file: sign-in links are rate limited per email. */
+async function adminSession() {
+  adminCookie ??= await signIn(ADMIN);
+  return adminCookie;
+}
+
+let seq = 0;
+const uid = (p: string) => `${p}_${++seq}_${Math.random().toString(36).slice(2, 10)}`;
+
+/** The smallest valid Word file: one paragraph. */
+async function makeDocx(text: string) {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`);
+  return zip.generateAsync({ type: "uint8array" });
+}
+
+async function makePdf(text = "hello") {
+  const pdf = await PDFDocument.create();
+  pdf.addPage([600, 800]).drawText(text, { x: 50, y: 700 });
+  return pdf.save();
+}
+
+/** Test shorthand: `download` on a folder makes its files downloadable unless a file says otherwise. */
+const folderDownloads = new Map<string, boolean>();
+
+async function addFolder(opts: { download?: boolean; watermark?: boolean } = {}) {
+  const id = uid("folder");
+  await env.DB.prepare(
+    "INSERT INTO folders (id, name, description, position, watermark, created_at) VALUES (?, ?, '', 0, ?, ?)",
+  )
+    .bind(id, `Folder ${id}`, opts.watermark === false ? 0 : 1, Date.now())
+    .run();
+  folderDownloads.set(id, !!opts.download);
+  return id;
+}
+
+async function addFile(folderId: string, opts: { name?: string; type?: string; published?: boolean; download?: boolean; bytes?: Uint8Array } = {}) {
+  const id = uid("file");
+  const bytes = opts.bytes ?? (await makePdf());
+  await env.FILES.put(`files/${id}`, bytes);
+  await env.DB.prepare(
+    `INSERT INTO files (id, folder_id, name, r2_key, content_type, size, published, allow_download, uploaded_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(id, folderId, opts.name ?? `${id}.pdf`, `files/${id}`, opts.type ?? "application/pdf", bytes.byteLength, opts.published === false ? 0 : 1,
+      (opts.download ?? folderDownloads.get(folderId)) ? 1 : 0, Date.now(), Date.now())
+    .run();
+  return id;
+}
+
+async function addInvestor(opts: { folders?: string[]; expiresAt?: number; revoked?: boolean } = {}) {
+  const id = uid("inv");
+  const email = `${id}@fund.test`.toLowerCase();
+  await env.DB.prepare("INSERT INTO investors (id, email, name, firm, expires_at, revoked_at, created_at) VALUES (?, ?, 'Ada Okafor', 'Fund', ?, ?, ?)")
+    .bind(id, email, opts.expiresAt ?? null, opts.revoked ? Date.now() : null, Date.now())
+    .run();
+  for (const f of opts.folders ?? []) {
+    await env.DB.prepare("INSERT INTO grants (investor_id, folder_id, granted_at) VALUES (?, ?, ?)").bind(id, f, Date.now()).run();
+  }
+  return { id, email };
+}
+
+describe("sign-in", () => {
+  it("never sends a link to an email that was not invited, and says the same thing", async () => {
+    const res = await req("/login", { form: { email: "stranger@nowhere.test" } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("If stranger@nowhere.test has access");
+    expect(await lastLinkFor("stranger@nowhere.test")).toBeNull();
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_tokens WHERE email = ?").bind("stranger@nowhere.test").first<{ n: number }>();
+    expect(row?.n).toBe(0);
+  });
+
+  it("does not send links to revoked or expired investors", async () => {
+    const revoked = await addInvestor({ revoked: true });
+    const expired = await addInvestor({ expiresAt: Date.now() - 1000 });
+    expect(await requestLink(revoked.email)).toBeNull();
+    expect(await requestLink(expired.email)).toBeNull();
+  });
+
+  it("a link works once, and opening it (GET) does not use it up", async () => {
+    const inv = await addInvestor();
+    const link = await requestLink(inv.email);
+    const t = new URL(link!).searchParams.get("t")!;
+    expect((await req(`/auth?t=${encodeURIComponent(t)}`)).status).toBe(200);
+    expect((await req(`/auth?t=${encodeURIComponent(t)}`)).status).toBe(200);
+    expect((await req("/auth", { form: { t } })).status).toBe(303);
+    expect((await req("/auth", { form: { t } })).status).toBe(400);
+  });
+
+  it("expired links are refused", async () => {
+    const inv = await addInvestor();
+    const link = await requestLink(inv.email);
+    await env.DB.prepare("UPDATE login_tokens SET expires_at = ? WHERE email = ?").bind(Date.now() - 1, inv.email).run();
+    const t = new URL(link!).searchParams.get("t")!;
+    expect((await req("/auth", { form: { t } })).status).toBe(400);
+  });
+
+  it("stores only hashes of tokens and sessions", async () => {
+    const inv = await addInvestor();
+    const link = await requestLink(inv.email);
+    const t = new URL(link!).searchParams.get("t")!;
+    expect(await env.DB.prepare("SELECT 1 FROM login_tokens WHERE token_hash = ?").bind(t).first()).toBeNull();
+    const cookie = (await req("/auth", { form: { t } })).headers.get("set-cookie")!.split(";")[0].split("=")[1];
+    expect(await env.DB.prepare("SELECT 1 FROM sessions WHERE id_hash = ?").bind(cookie).first()).toBeNull();
+  });
+
+  it("limits sign-in emails to 5 per 15 minutes", async () => {
+    const inv = await addInvestor();
+    for (let i = 0; i < 7; i++) await req("/login", { form: { email: inv.email } });
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_tokens WHERE email = ?").bind(inv.email).first<{ n: number }>();
+    expect(row?.n).toBe(5);
+  });
+
+  it("rejects form posts from other sites", async () => {
+    expect((await req("/login", { form: { email: ADMIN }, origin: "https://evil.test" })).status).toBe(403);
+    expect((await req("/login", { form: { email: ADMIN }, origin: null })).status).toBe(403);
+    expect((await req("/login", { form: { email: ADMIN }, origin: "null" })).status).toBe(403);
+  });
+});
+
+describe("investor access", () => {
+  it("shows only granted folders and only visible files", async () => {
+    const granted = await addFolder();
+    const other = await addFolder();
+    const visible = await addFile(granted, { name: "Cap table.pdf" });
+    await addFile(granted, { name: "Hidden plan.pdf", published: false });
+    await addFile(other, { name: "Other folder secret.pdf" });
+    const inv = await addInvestor({ folders: [granted] });
+    const cookie = await signIn(inv.email);
+
+    const html = await (await req("/room", { cookie })).text();
+    expect(html).toContain("Cap table.pdf");
+    expect(html).toContain(`/d/${visible}`);
+    expect(html).not.toContain("Hidden plan.pdf");
+    expect(html).not.toContain("Other folder secret.pdf");
+    expect(html).not.toContain(`Folder ${other}`);
+  });
+
+  it("returns 404 for files outside the investor's folders, hidden files and unknown ids", async () => {
+    const granted = await addFolder();
+    const other = await addFolder();
+    const hidden = await addFile(granted, { published: false });
+    const elsewhere = await addFile(other);
+    const inv = await addInvestor({ folders: [granted] });
+    const cookie = await signIn(inv.email);
+    for (const id of [hidden, elsewhere, "not-a-real-id"]) {
+      expect((await req(`/d/${id}`, { cookie })).status).toBe(404);
+      expect((await req(`/d/${id}/view`, { cookie })).status).toBe(404);
+      expect((await req(`/d/${id}/download`, { cookie })).status).toBe(404);
+    }
+  });
+
+  it("needs a session for every file url", async () => {
+    const folder = await addFolder({ download: true });
+    const file = await addFile(folder);
+    for (const p of [`/room`, `/d/${file}`, `/d/${file}/view`, `/d/${file}/download`]) {
+      const res = await req(p);
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("/");
+    }
+  });
+
+  it("download is set file by file: off by default, on only where switched on", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const fd = new FormData();
+    fd.append("files", new File([await makePdf()], "Memo.pdf", { type: "application/pdf" }));
+    fd.append("files", new File([await makePdf()], "SAFE.pdf", { type: "application/pdf" }));
+    fd.append("publish", "on");
+    await req(`/admin/folders/${folder}/upload`, { cookie: admin, form: fd });
+    const files = await env.DB.prepare("SELECT id, name, allow_download FROM files WHERE folder_id = ? ORDER BY name").bind(folder).all<{ id: string; name: string; allow_download: number }>();
+    expect(files.results.map((f) => f.allow_download)).toEqual([0, 0]);
+    const [memo, safe] = files.results;
+
+    const on = await req(`/admin/files/${safe.id}`, { cookie: admin, form: { action: "download_on" } });
+    expect(on.status).toBe(303);
+    expect(await (await req("/admin", { cookie: admin })).text()).toContain("1 downloadable");
+
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    expect((await req(`/d/${safe.id}/download`, { cookie })).status).toBe(200);
+    expect((await req(`/d/${memo.id}/download`, { cookie })).status).toBe(404);
+    expect(await (await req(`/d/${memo.id}`, { cookie })).text()).not.toContain("/download");
+
+    await req(`/admin/files/${safe.id}`, { cookie: admin, form: { action: "download_off" } });
+    expect((await req(`/d/${safe.id}/download`, { cookie })).status).toBe(404);
+  });
+
+  it("blocks downloads when the file is view only", async () => {
+    const folder = await addFolder({ download: false });
+    const file = await addFile(folder);
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    expect((await req(`/d/${file}/view`, { cookie })).status).toBe(200);
+    expect((await req(`/d/${file}/download`, { cookie })).status).toBe(404);
+    expect(await (await req(`/d/${file}`, { cookie })).text()).not.toContain("/download");
+  });
+
+  it("hides PowerPoint files in view-only folders, since they cannot open in the browser", async () => {
+    const folder = await addFolder({ download: false });
+    const pptx = await addFile(folder, { name: "Deck.pptx", type: "application/vnd.openxmlformats-officedocument.presentationml.presentation", bytes: new Uint8Array([80, 75, 3, 4]) });
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    expect(await (await req("/room", { cookie })).text()).not.toContain("Deck.pptx");
+    expect((await req(`/d/${pptx}`, { cookie })).status).toBe(404);
+  });
+
+  it("opens Excel and CSV as a stamped table in the browser, even in view-only folders", async () => {
+    const folder = await addFolder({ download: false, watermark: true });
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["Month", "Revenue"], ["Oct 2026", 1234], ["<b>x</b>", 5]]), "Actuals");
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["Plan"]]), "Plan");
+    const xlsxBytes = new Uint8Array(XLSX.write(book, { type: "array", bookType: "xlsx" }));
+    const xlsx = await addFile(folder, { name: "Model.xlsx", type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes: xlsxBytes });
+    const csv = await addFile(folder, { name: "Cap table.csv", type: "text/csv", bytes: new TextEncoder().encode("Holder,Shares\nAda,100\n") });
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+
+    const room = await (await req("/room", { cookie })).text();
+    expect(room).toContain("Model.xlsx");
+    expect(room).toContain("Cap table.csv");
+    expect(await (await req(`/d/${xlsx}`, { cookie })).text()).toContain(`class="frame page sheet"`);
+
+    const res = await req(`/d/${xlsx}/view`, { cookie });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("content-security-policy")).toContain("script-src 'none'");
+    const html = await res.text();
+    expect(html).toContain("Oct 2026");
+    expect(html).toContain("Actuals");
+    expect(html).toContain("Plan");
+    expect(html).toContain(`Shared with ${inv.email}`);
+    expect(html).not.toContain("<b>x</b>");
+    expect(html).not.toContain("<script");
+
+    const csvHtml = await (await req(`/d/${csv}/view`, { cookie })).text();
+    expect(csvHtml).toContain("Ada");
+    expect((await req(`/d/${xlsx}/download`, { cookie })).status).toBe(404);
+  });
+
+  it("opens Word files as a page in the browser", async () => {
+    const folder = await addFolder({ download: false });
+    const docx = await addFile(folder, {
+      name: "Bylaws.docx",
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      bytes: await makeDocx("Article I. Name of the company"),
+    });
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    const html = await (await req(`/d/${docx}/view`, { cookie })).text();
+    expect(html).toContain("Article I. Name of the company");
+    expect(html).toContain('class="doc"');
+  });
+
+  it("shows landscape PDFs (slides) in a wide frame that fits the whole page", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const slides = await PDFDocument.create();
+    slides.addPage([1280, 720]);
+    const fd = new FormData();
+    fd.append("files", new File([await slides.save()], "Slides.pdf", { type: "application/pdf" }));
+    fd.append("files", new File([await makePdf()], "Memo.pdf", { type: "application/pdf" }));
+    fd.append("publish", "on");
+    await req(`/admin/folders/${folder}/upload`, { cookie: admin, form: fd });
+    const rows = await env.DB.prepare("SELECT id, name, orientation FROM files WHERE folder_id = ? ORDER BY name").bind(folder).all<{ id: string; name: string; orientation: string }>();
+    expect(rows.results.map((r) => [r.name, r.orientation])).toEqual([["Memo.pdf", "portrait"], ["Slides.pdf", "landscape"]]);
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    const page = await (await req(`/d/${rows.results[1].id}`, { cookie })).text();
+    expect(page).toContain(`class="frame pdf landscape"`);
+    expect(page).toContain("view=Fit");
+  });
+
+  it("stamps PDFs with the investor's email", async () => {
+    const folder = await addFolder({ download: true, watermark: true });
+    const file = await addFile(folder);
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    for (const p of [`/d/${file}/view`, `/d/${file}/download`]) {
+      const res = await req(p, { cookie });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("private, no-store");
+      const pdf = await PDFDocument.load(await res.arrayBuffer());
+      expect(pdf.getSubject()).toContain(inv.email);
+    }
+    expect((await req(`/d/${file}/download`, { cookie })).headers.get("content-disposition")).toMatch(/^attachment/);
+  });
+
+  it("refuses to serve a PDF it cannot stamp", async () => {
+    const folder = await addFolder({ watermark: true });
+    const broken = new TextEncoder().encode("%PDF-1.7 this is not really a pdf");
+    const file = await addFile(folder, { bytes: broken });
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    expect((await req(`/d/${file}/view`, { cookie })).status).toBe(422);
+  });
+
+  it("logs views once per minute per file", async () => {
+    const folder = await addFolder();
+    const file = await addFile(folder);
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    await req(`/d/${file}/view`, { cookie });
+    await req(`/d/${file}/view`, { cookie });
+    const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE email = ? AND action = 'view'").bind(inv.email).first<{ n: number }>();
+    expect(row?.n).toBe(1);
+  });
+
+  it("revoking or expiring cuts off an existing session at once", async () => {
+    const folder = await addFolder();
+    const file = await addFile(folder);
+    const a = await addInvestor({ folders: [folder] });
+    const b = await addInvestor({ folders: [folder] });
+    const ca = await signIn(a.email);
+    const cb = await signIn(b.email);
+    await env.DB.prepare("UPDATE investors SET revoked_at = ? WHERE id = ?").bind(Date.now(), a.id).run();
+    await env.DB.prepare("UPDATE investors SET expires_at = ? WHERE id = ?").bind(Date.now() - 1, b.id).run();
+    expect((await req(`/d/${file}/view`, { cookie: ca })).status).toBe(302);
+    expect((await req(`/d/${file}/view`, { cookie: cb })).status).toBe(302);
+  });
+
+  it("removing a folder grant takes effect on the next request", async () => {
+    const folder = await addFolder();
+    const file = await addFile(folder);
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    expect((await req(`/d/${file}/view`, { cookie })).status).toBe(200);
+    await env.DB.prepare("DELETE FROM grants WHERE investor_id = ?").bind(inv.id).run();
+    expect((await req(`/d/${file}/view`, { cookie })).status).toBe(404);
+  });
+
+  it("investors cannot reach any admin page or action", async () => {
+    const folder = await addFolder();
+    const file = await addFile(folder);
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    expect((await req("/admin", { cookie })).status).toBe(404);
+    expect((await req("/admin/investors", { cookie })).status).toBe(404);
+    expect((await req(`/admin/files/${file}/preview`, { cookie })).status).toBe(404);
+    expect((await req(`/admin/files/${file}`, { cookie })).status).toBe(404);
+    expect((await req(`/admin/files/${file}/delete`, { cookie, form: {} })).status).toBe(404);
+    expect((await req("/admin/investors", { cookie, form: { email: "x@y.test" } })).status).toBe(404);
+  });
+});
+
+describe("admin", () => {
+  it("only emails in ADMIN_EMAILS get the admin view", async () => {
+    const res = await req("/admin", { cookie: await adminSession() });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("New folder");
+  });
+
+  it("creates a folder, uploads, adds an investor with that folder, and the investor sees it", async () => {
+    const admin = await adminSession();
+    const name = uid("Corporate");
+    await req("/admin/folders", { cookie: admin, form: { name, watermark: "on" } });
+    const folder = await env.DB.prepare("SELECT id FROM folders WHERE name = ?").bind(name).first<{ id: string }>();
+    expect(folder).toBeTruthy();
+
+    const fd = new FormData();
+    fd.append("files", new File([await makePdf()], "Certificate of incorporation.pdf", { type: "application/pdf" }));
+    fd.append("files", new File([await makePdf()], "Bylaws DRAFT.pdf", { type: "application/pdf" }));
+    fd.append("publish", "on");
+    const up = await req(`/admin/folders/${folder!.id}/upload`, { cookie: admin, form: fd });
+    expect(up.status).toBe(303);
+    expect(up.headers.get("location")).toContain("n=2&held=1");
+
+    const files = await env.DB.prepare("SELECT name, published, r2_key FROM files WHERE folder_id = ? ORDER BY name").bind(folder!.id).all<{ name: string; published: number; r2_key: string }>();
+    expect(files.results.map((f) => [f.name, f.published])).toEqual([
+      ["Bylaws DRAFT.pdf", 0],
+      ["Certificate of incorporation.pdf", 1],
+    ]);
+
+    const email = `${uid("lp")}@fund.test`.toLowerCase();
+    const add = await req("/admin/investors", { cookie: admin, form: { email, name: "Lee", firm: "Plug and Play", folders: [folder!.id], invite: "on" } });
+    expect(add.status).toBe(303);
+    const mails = (await (await req("/__test/outbox")).json()) as { to: string; subject: string }[];
+    expect(mails.some((m) => m.to === email && m.subject.includes("data room"))).toBe(true);
+
+    const cookie = await signIn(email);
+    const room = await (await req("/room", { cookie })).text();
+    expect(room).toContain("Certificate of incorporation.pdf");
+    expect(room).not.toContain("Bylaws DRAFT.pdf");
+  });
+
+  it("opens a file on a viewer page inside the room, with the original unstamped", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder({ watermark: true });
+    const file = await addFile(folder, { name: "Bylaws.pdf" });
+    const page = await req(`/admin/files/${file}`, { cookie: admin });
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain(`<iframe src="/admin/files/${file}/preview`);
+    expect(html).toContain("Who opened it");
+    const raw = await req(`/admin/files/${file}/preview`, { cookie: admin });
+    expect(raw.headers.get("content-disposition")).toMatch(/^inline/);
+    expect((await PDFDocument.load(await raw.arrayBuffer())).getSubject()).toBeUndefined();
+    const dl = await req(`/admin/files/${file}/preview?download=1`, { cookie: admin });
+    expect(dl.headers.get("content-disposition")).toMatch(/^attachment/);
+    const hide = await req(`/admin/files/${file}`, { cookie: admin, form: { action: "hide", back: "file" } });
+    expect(hide.headers.get("location")).toBe(`/admin/files/${file}?m=file_saved`);
+  });
+
+  it("Preview shows the room on the investor screens, stamped, without logging anything", async () => {
+    const admin = await adminSession();
+    const granted = await addFolder({ watermark: true });
+    const other = await addFolder({ watermark: true });
+    const shown = await addFile(granted, { name: "Deck.pdf" });
+    const hidden = await addFile(granted, { name: "Hidden notes.pdf", published: false });
+    const elsewhere = await addFile(other, { name: "Other.pdf" });
+    const inv = await addInvestor({ folders: [granted] });
+
+    // Everything visible
+    const all = await (await req("/admin/preview", { cookie: admin })).text();
+    expect(all).toContain("Preview.");
+    expect(all).toContain(`/admin/preview/d/${shown}`);
+    expect(all).toContain(`/admin/preview/d/${elsewhere}`);
+    expect(all).not.toContain("Hidden notes.pdf");
+    expect(all).not.toContain('aria-label="Admin"');
+    expect((await req(`/admin/preview/d/${hidden}`, { cookie: admin })).status).toBe(404);
+
+    // One investor: only their folders, stamped with their email
+    const mine = await (await req(`/admin/preview/i/${inv.id}`, { cookie: admin })).text();
+    expect(mine).toContain("Deck.pdf");
+    expect(mine).not.toContain("Other.pdf");
+    expect((await req(`/admin/preview/i/${inv.id}/d/${elsewhere}`, { cookie: admin })).status).toBe(404);
+    const pdf = await req(`/admin/preview/i/${inv.id}/d/${shown}/view`, { cookie: admin });
+    expect((await PDFDocument.load(await pdf.arrayBuffer())).getSubject()).toContain(inv.email);
+
+    // One file, even hidden
+    const one = await req(`/admin/preview/f/${hidden}`, { cookie: admin });
+    expect(one.status).toBe(200);
+    expect(await one.text()).toContain("This file is Hidden");
+    const raw = await req(`/admin/preview/f/${hidden}/view`, { cookie: admin });
+    expect((await PDFDocument.load(await raw.arrayBuffer())).getSubject()).toContain("investor@fund.com");
+
+    const logged = await env.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE file_id IN (?, ?, ?)").bind(shown, hidden, elsewhere).first<{ n: number }>();
+    expect(logged?.n).toBe(0);
+  });
+
+  it("Preview is admin only", async () => {
+    const folder = await addFolder();
+    const file = await addFile(folder);
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    for (const p of ["/admin/preview", `/admin/preview/d/${file}/view`, `/admin/preview/i/${inv.id}`, `/admin/preview/f/${file}/view`]) {
+      expect((await req(p, { cookie })).status).toBe(404);
+      expect((await req(p)).status).toBe(302);
+    }
+  });
+
+  it("a file can have a custom link, which still checks access", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const other = await addFolder();
+    const file = await addFile(folder, { name: "Pitch Deck.pdf" });
+    const second = await addFile(other, { name: "Other.pdf" });
+    const slug = uid("pitch-deck").toLowerCase().replace(/_/g, "-");
+
+    expect((await req(`/admin/files/${file}`, { cookie: admin, form: { action: "slug", slug: "No Good!" } })).headers.get("location")).toContain("slug_saved");
+    expect((await env.DB.prepare("SELECT slug FROM files WHERE id = ?").bind(file).first<{ slug: string }>())?.slug).toBe("no-good");
+    expect((await req(`/admin/files/${file}`, { cookie: admin, form: { action: "slug", slug: "x" } })).headers.get("location")).toContain("slug_invalid");
+    await req(`/admin/files/${file}`, { cookie: admin, form: { action: "slug", slug } });
+    expect((await req(`/admin/files/${second}`, { cookie: admin, form: { action: "slug", slug } })).headers.get("location")).toContain("slug_taken");
+
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    expect(await (await req("/room", { cookie })).text()).toContain(`href="/d/${slug}"`);
+    expect((await req(`/d/${slug}`, { cookie })).status).toBe(200);
+    expect((await req(`/d/${slug}/view`, { cookie })).status).toBe(200);
+    expect((await req(`/d/${file}`, { cookie })).status).toBe(200);
+
+    const outsider = await addInvestor({ folders: [other] });
+    const oc = await signIn(outsider.email);
+    expect((await req(`/d/${slug}`, { cookie: oc })).status).toBe(404);
+    expect((await req(`/d/${slug}/view`, { cookie: oc })).status).toBe(404);
+  });
+
+  it("replacing a file keeps its id, link, access, settings and history", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder({ download: true });
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([["Version", "One"]]), "S");
+    const file = await addFile(folder, { name: "Model.xlsx", type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", bytes: new Uint8Array(XLSX.write(book, { type: "array", bookType: "xlsx" })) });
+    const slug = uid("model").toLowerCase().replace(/_/g, "-");
+    await req(`/admin/files/${file}`, { cookie: admin, form: { action: "slug", slug } });
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    expect(await (await req(`/d/${slug}/view`, { cookie })).text()).toContain("One");
+
+    const book2 = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book2, XLSX.utils.aoa_to_sheet([["Version", "Two"]]), "S");
+    const fd = new FormData();
+    fd.append("file", new File([XLSX.write(book2, { type: "array", bookType: "xlsx" })], "Model v2 final.xlsx"));
+    const res = await req(`/admin/files/${file}/replace`, { cookie: admin, form: fd });
+    expect(res.headers.get("location")).toContain("m=replaced");
+
+    const row = await env.DB.prepare("SELECT id, name, slug, allow_download, published FROM files WHERE id = ?").bind(file).first();
+    expect(row).toMatchObject({ id: file, name: "Model.xlsx", slug, allow_download: 1, published: 1 });
+    const html = await (await req(`/d/${slug}/view`, { cookie })).text();
+    expect(html).toContain("Two");
+    expect(html).not.toContain(">One<");
+
+    // Replacing a PowerPoint with its PDF export keeps the name, swaps the extension.
+    const pptx = await addFile(folder, { name: "Deck.pptx", type: "application/vnd.openxmlformats-officedocument.presentationml.presentation", bytes: new Uint8Array([80, 75, 3, 4]) });
+    const fd2 = new FormData();
+    fd2.append("file", new File([await makePdf()], "export.pdf"));
+    await req(`/admin/files/${pptx}/replace`, { cookie: admin, form: fd2 });
+    const after = await env.DB.prepare("SELECT name, content_type FROM files WHERE id = ?").bind(pptx).first();
+    expect(after).toMatchObject({ name: "Deck.pdf", content_type: "application/pdf" });
+  });
+
+  it("will not publish a file whose name says draft or internal", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const file = await addFile(folder, { name: "SAFE Amendment (DRAFT).docx", published: false });
+    const res = await req(`/admin/files/${file}`, { cookie: admin, form: { action: "publish" } });
+    expect(res.headers.get("location")).toContain("m=file_internal");
+    const row = await env.DB.prepare("SELECT published FROM files WHERE id = ?").bind(file).first<{ published: number }>();
+    expect(row?.published).toBe(0);
+  });
+
+  it("revoke signs the investor out and stops new links", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    await addFile(folder);
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    await req(`/admin/investors/${inv.id}/revoke`, { cookie: admin, form: {} });
+    expect((await req("/room", { cookie })).status).toBe(302);
+    expect(await env.DB.prepare("SELECT 1 FROM sessions WHERE email = ?").bind(inv.email).first()).toBeNull();
+    const before = await lastLinkFor(inv.email);
+    await req("/login", { form: { email: inv.email } });
+    expect(await lastLinkFor(inv.email)).toBe(before);
+  });
+
+  it("grants can be changed folder by folder", async () => {
+    const admin = await adminSession();
+    const f1 = await addFolder();
+    const f2 = await addFolder();
+    const inv = await addInvestor({ folders: [f1] });
+    await req(`/admin/investors/${inv.id}`, { cookie: admin, form: { name: "Ada", firm: "", expires: "", folders: [f2, "bogus-folder"] } });
+    const rows = await env.DB.prepare("SELECT folder_id FROM grants WHERE investor_id = ?").bind(inv.id).all<{ folder_id: string }>();
+    expect(rows.results.map((r) => r.folder_id)).toEqual([f2]);
+  });
+
+  it("escapes names so an uploaded file cannot inject HTML", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    await addFile(folder, { name: `<img src=x onerror=alert(1)>.pdf` });
+    const html = await (await req("/admin", { cookie: admin })).text();
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x");
+  });
+
+  it("never shows sign-in links on the page outside a local address", async () => {
+    const res = await req("/login", { form: { email: ADMIN } });
+    expect(await res.text()).not.toContain("/auth?t=");
+  });
+
+  it("takes its branding from the BRAND_* settings", async () => {
+    const page = await (await req("/")).text();
+    expect(page).toContain("Openroom data room");
+    expect(page).toContain("family=Inter");
+    expect(page).toContain('href="/theme.css"');
+    expect(page).toContain("Powered by");
+    const css = await (await req("/theme.css")).text();
+    expect(css).toContain("--blue:#2563EB");
+    expect(css).toContain("--navy:#0F172A");
+  });
+
+  it("sends strict security headers", async () => {
+    const res = await req("/");
+    expect(res.headers.get("content-security-policy")).toContain("script-src 'self'");
+    expect(res.headers.get("x-robots-tag")).toContain("noindex");
+    expect(res.headers.get("referrer-policy")).toBe("same-origin");
+    expect(res.headers.get("strict-transport-security")).toBeTruthy();
+  });
+});
