@@ -1102,3 +1102,81 @@ describe("update notice", () => {
     await env.DB.prepare("DELETE FROM settings WHERE key = 'update_check'").run();
   });
 });
+
+describe("request access", () => {
+  const ask = (form: Record<string, string>) => req("/request", { form });
+  const pendingFor = (email: string) =>
+    env.DB.prepare("SELECT * FROM access_requests WHERE email = ? AND status = 'pending'").bind(email).first<{ id: string; note: string }>();
+
+  it("thanks everyone the same way, and tells the admins about real requests", async () => {
+    expect(await (await req("/")).text()).toContain('href="/request"');
+    expect((await req("/request")).status).toBe(200);
+    const email = `${uid("asker")}@fund.test`.toLowerCase();
+    const thanks = await (await ask({ name: "Grace Hopper", email, firm: "Navy Ventures", note: "Met at <b>demo day</b>" })).text();
+    expect(thanks).toContain("Thank you");
+    const row = await pendingFor(email);
+    expect(row?.note).toBe("Met at <b>demo day</b>");
+    const mails = (await (await req("/__test/outbox")).json()) as { to: string; subject: string; html: string }[];
+    const toAdmin = mails.filter((m) => m.to === ADMIN && m.subject === "Access request from Grace Hopper").pop();
+    expect(toAdmin?.html).toContain("Navy Ventures");
+    expect(toAdmin?.html).not.toContain("<b>demo day</b>"); // escaped
+
+    // Someone already invited, a spam bot, and a person over the daily limit: same page, nothing stored.
+    const inv = await addInvestor();
+    expect(await (await ask({ name: "Ada", email: inv.email })).text()).toBe(thanks);
+    expect(await pendingFor(inv.email)).toBeNull();
+    const bot = `${uid("bot")}@spam.test`.toLowerCase();
+    expect(await (await ask({ name: "Bot", email: bot, website: "http://spam.example" })).text()).toBe(thanks);
+    expect(await pendingFor(bot)).toBeNull();
+    expect((await ask({ name: "", email: "nope" })).status).toBe(400);
+  });
+
+  it("keeps one open request per person and limits repeats", async () => {
+    const email = `${uid("again")}@fund.test`.toLowerCase();
+    for (let i = 0; i < 5; i++) await ask({ name: "Again", email, note: `try ${i}` });
+    const rows = await env.DB.prepare("SELECT COUNT(*) AS n FROM access_requests WHERE email = ?").bind(email).first<{ n: number }>();
+    expect(rows!.n).toBe(1);
+  });
+
+  it("approves with chosen folders and an invite, or declines quietly; admins only", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const other = await addFolder();
+    const email = `${uid("approve")}@fund.test`.toLowerCase();
+    await ask({ name: "Approve Me", email, firm: "Fund" });
+    const r = (await pendingFor(email))!;
+    expect(await (await req("/admin/investors", { cookie: admin })).text()).toContain("Approve Me");
+
+    // Not for investors.
+    const someone = await addInvestor({ folders: [other] });
+    expect((await req(`/admin/requests/${r.id}/approve`, { cookie: await signIn(someone.email), form: { folders: [folder] } })).status).toBe(404);
+
+    const res = await req(`/admin/requests/${r.id}/approve`, { cookie: admin, form: { folders: [folder], invite: "on" } });
+    expect(res.headers.get("location")).toContain("m=request_approved");
+    const inv = await env.DB.prepare("SELECT id, name, firm FROM investors WHERE email = ?").bind(email).first<{ id: string; name: string; firm: string }>();
+    expect(inv).toMatchObject({ name: "Approve Me", firm: "Fund" });
+    const grants = await env.DB.prepare("SELECT folder_id FROM grants WHERE investor_id = ?").bind(inv!.id).all<{ folder_id: string }>();
+    expect(grants.results.map((g) => g.folder_id)).toEqual([folder]);
+    expect(await pendingFor(email)).toBeNull();
+    const mails = (await (await req("/__test/outbox")).json()) as { to: string; subject: string }[];
+    expect(mails.some((m) => m.to === email && /shared its data room/.test(m.subject))).toBe(true);
+    expect(await (await req("/room", { cookie: await signIn(email) })).text()).toContain(`Folder ${folder}`);
+
+    // Approving someone already invited adds folders and keeps theirs.
+    const existing = await addInvestor({ folders: [other] });
+    await env.DB.prepare("INSERT INTO access_requests (id, email, name, created_at) VALUES (?, ?, 'Existing', ?)").bind(uid("req"), existing.email, Date.now()).run();
+    const r2 = (await pendingFor(existing.email))!;
+    await req(`/admin/requests/${r2.id}/approve`, { cookie: admin, form: { folders: [folder] } });
+    const kept = await env.DB.prepare("SELECT COUNT(*) AS n FROM grants WHERE investor_id = ?").bind(existing.id).first<{ n: number }>();
+    expect(kept!.n).toBe(2);
+
+    // Decline: no investor, no email.
+    const no = `${uid("decline")}@fund.test`.toLowerCase();
+    await ask({ name: "Decline Me", email: no });
+    const r3 = (await pendingFor(no))!;
+    expect((await req(`/admin/requests/${r3.id}/decline`, { cookie: admin, form: {} })).headers.get("location")).toContain("m=request_declined");
+    expect(await env.DB.prepare("SELECT 1 FROM investors WHERE email = ?").bind(no).first()).toBeNull();
+    const after = (await (await req("/__test/outbox")).json()) as { to: string }[];
+    expect(after.filter((m) => m.to === no)).toHaveLength(0);
+  });
+});

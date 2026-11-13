@@ -199,6 +199,23 @@ export function setupCodeMail(origin: string, to: string, code: string): Mail {
   };
 }
 
+/** To admins: someone asked for access from the sign-in page. */
+export function accessRequestMail(origin: string, to: string, req: { name: string; email: string; firm: string; note: string }): Mail {
+  const who = req.firm ? `${req.name} (${req.firm})` : req.name;
+  const lines = [
+    `${who} asked for access to the ${brand().roomName}.`,
+    `Email: ${req.email}`,
+    ...(req.note ? [`Their note: ${req.note}`] : []),
+    "Approve it and choose which folders they see, or decline it, on the Investors page.",
+  ];
+  return {
+    to,
+    subject: `Access request from ${req.name}`,
+    text: `${lines.join("\n\n")}\n\n${origin}/admin/investors#requests\n`,
+    html: shell(origin, "New access request", lines, { href: `${origin}/admin/investors#requests`, label: "Review the request" }),
+  };
+}
+
 export function inviteMail(origin: string, to: string, name: string): Mail {
   const hello = name ? `Hi ${name.split(" ")[0]},` : "Hello,";
   const lines = [

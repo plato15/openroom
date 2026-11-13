@@ -36,6 +36,7 @@ Using an AI coding agent to set it up? Point it at [AGENTS.md](AGENTS.md).
 - **Short links** for any file or folder, like `dataroom.acme.com/deck` or `dataroom.acme.com/legal`, with a **Copy link** button. Someone who is not signed in signs in first and lands right on it. A link is only a nicer address: access is checked on every open, and a link to something you cannot see looks exactly like one that does not exist. Names the room uses itself (`admin`, `room`, `setup`...) cannot be links.
 - **Replace with a new version** that keeps the link, access and history.
 - End dates per investor, instant revoke, invites by email.
+- **Request access:** a link on the sign-in page lets anyone ask for access (name, email, firm, a note). Admins get an email and approve on the Investors page, ticking the folders, which sends the invite, or decline. The page answers everyone the same way, so it never reveals who already has access.
 - Files named "draft" or "internal" upload hidden and cannot be published until renamed.
 - **Setup screen** the first time the room opens: your email, what the room is for, then your name, colours and logo. Nothing to configure while deploying.
 - **Templates** that set up the folders for you: Investor data room, Selling the company, Board portal, Client or partner portal (or start empty). Each section has **subfolders** with a hidden placeholder page in each, like "Pitch deck"; click **Upload your version** on each one and it becomes visible.
@@ -284,6 +285,7 @@ The suite runs twice: once in the real Workers runtime (Miniflare) and once agai
 | `src/routes/branding.ts` | The Settings tab: branding and email |
 | `src/settings.ts` | Settings saved in the database: owner, email, who is admin |
 | `src/templates.ts` | Room templates: folders, subfolders and placeholder pages |
+| `src/routes/requests.ts` | Request access from the sign-in page |
 | `src/updates.ts`, `scripts/update-openroom.sh` | "New version available" notice; the Update Openroom workflow's script |
 | `src/links.ts`, `src/routes/shortlinks.ts` | Short links (`/deck`), reserved names, where to go after sign-in |
 | `src/render.ts` | Excel, CSV and Word as read-only pages |

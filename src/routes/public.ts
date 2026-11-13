@@ -46,7 +46,8 @@ function signInPage(error?: string, next?: string | null) {
           <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required autofocus placeholder="you@fund.com">
           <button type="submit" class="btn wide">Email me a sign-in link</button>
         </form>
-      </section>`,
+      </section>
+      <p class="small center">No access yet? <a href="/request">Request access</a></p>`,
   });
 }
 
@@ -85,7 +86,7 @@ publicRoutes.post("/login", async (c) => {
         <div class="mail-icon" aria-hidden="true">✉</div>
         <h1 class="h2">Check your email</h1>
         <p class="muted">If ${email} has access to the ${brand().roomName}, a sign-in link is on its way. It works once and expires in 15 minutes.</p>
-        <p class="small muted">Nothing arrived after a few minutes? Check spam, or ask the person who invited you to confirm your email address.</p>
+        <p class="small muted">Nothing arrived after a few minutes? Check spam, or ask the person who invited you to confirm your email address. Not invited yet? <a href="/request">Request access</a>.</p>
         ${devLink ? html`<p class="dev">Local mode: <a href="${devLink}">open sign-in link</a></p>` : ""}
         <p><a href="/" class="link">Use a different email</a></p>
       </section>`,

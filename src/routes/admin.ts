@@ -77,6 +77,10 @@ const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
   revoked: ["ok", "Access revoked. They are signed out everywhere."],
   restored: ["ok", "Access restored."],
   investor_deleted: ["ok", "Investor removed."],
+  request_approved: ["ok", "Request approved and invite sent."],
+  request_approved_quiet: ["ok", "Request approved. No invite was sent; send one from their page when ready."],
+  request_declined: ["ok", "Request declined. Nothing was sent to them."],
+  request_is_admin: ["error", "That email is an admin email."],
 };
 function flash(c: { req: { query: (k: string) => string | undefined } }) {
   const code = c.req.query("m");
@@ -772,6 +776,9 @@ adminRoutes.get("/admin/investors", async (c) => {
       .all<{ id: string; folders: number; opens: number }>(),
   ]);
   const countById = new Map(counts.results.map((r) => [r.id, r]));
+  const requests = (
+    await db.prepare("SELECT * FROM access_requests WHERE status = 'pending' ORDER BY created_at DESC LIMIT 50").all<AccessRequest>()
+  ).results;
 
   return c.html(
     page({
@@ -785,6 +792,7 @@ adminRoutes.get("/admin/investors", async (c) => {
             <p class="muted small">Each investor signs in with their email and sees only the folders you tick.</p>
           </div>
         </section>
+        ${requests.length ? requestsCard(requests, folders.results) : ""}
         <details class="card add" ${investors.results.length ? "" : "open"}>
           <summary class="btn">Add investor</summary>
           <form method="post" action="/admin/investors" class="stack">
@@ -1029,4 +1037,79 @@ adminRoutes.get("/admin/activity", async (c) => {
         <section class="card">${activityList(events.results, true, names)}</section>`,
     }),
   );
+});
+
+// ---------- Access requests ----------
+
+type AccessRequest = { id: string; email: string; name: string; firm: string; note: string; created_at: number };
+
+/** Waiting requests from the sign-in page: approve with folders (and an invite), or decline. */
+function requestsCard(requests: AccessRequest[], folders: Folder[]) {
+  return html`<section class="card requests" id="requests">
+    <h2 class="h3">Access requests <span class="badge blue">${requests.length}</span></h2>
+    ${requests.map(
+      (r) => html`<div class="request">
+        <p><strong>${r.name}</strong>${r.firm ? html` · ${r.firm}` : ""} · <span class="muted">${r.email}</span> · <span class="small muted">${formatDateTime(r.created_at)}</span></p>
+        ${r.note ? html`<p class="request-note">${r.note}</p>` : ""}
+        <details class="settings">
+          <summary class="btn small">Approve…</summary>
+          <form method="post" action="/admin/requests/${r.id}/approve" class="stack settings-body">
+            ${folderChecks(folders, new Set())}
+            <label class="small">Access ends (optional) <input type="date" name="expires"></label>
+            <label class="check small"><input type="checkbox" name="invite" checked> Email them an invite now</label>
+            <button class="btn small" type="submit">Approve</button>
+          </form>
+        </details>
+        <form method="post" action="/admin/requests/${r.id}/decline" class="inline-form">
+          <button class="link-btn small" type="submit">Decline</button>
+        </form>
+      </div>`,
+    )}
+  </section>`;
+}
+
+adminRoutes.post("/admin/requests/:id/approve", async (c) => {
+  const r = await c.env.DB.prepare("SELECT * FROM access_requests WHERE id = ? AND status = 'pending'").bind(c.req.param("id")).first<AccessRequest>();
+  if (!r) return c.redirect("/admin/investors", 303);
+  if (await isAdmin(c.env, r.email)) return c.redirect("/admin/investors?m=request_is_admin#requests", 303);
+  const form = await c.req.parseBody({ all: true });
+  const valid = await folderIdSet(c);
+  const chosen = [...new Set(formList(form.folders))].filter((f) => valid.has(f));
+  const t = now();
+  const decided = c.env.DB.prepare("UPDATE access_requests SET status = 'approved', decided_at = ?, decided_by = ? WHERE id = ?").bind(
+    t,
+    c.get("session")!.email,
+    r.id,
+  );
+  // Someone invited in the meantime keeps what they had and gains the chosen folders.
+  const existing = await c.env.DB.prepare("SELECT id FROM investors WHERE email = ?").bind(r.email).first<{ id: string }>();
+  const id = existing?.id ?? randomId();
+  await c.env.DB.batch([
+    ...(existing
+      ? []
+      : [
+          c.env.DB.prepare("INSERT INTO investors (id, email, name, firm, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(
+            id,
+            r.email,
+            r.name.slice(0, 100),
+            r.firm.slice(0, 100),
+            parseDateInput(form.expires),
+            t,
+          ),
+        ]),
+    ...chosen.map((f) => c.env.DB.prepare("INSERT OR IGNORE INTO grants (investor_id, folder_id, granted_at) VALUES (?, ?, ?)").bind(id, f, t)),
+    decided,
+  ]);
+  if (on(form.invite)) {
+    const ok = await sendInvite(c, { email: r.email, name: r.name });
+    return c.redirect(`/admin/investors/${id}?m=${ok ? "request_approved" : "invite_failed"}`, 303);
+  }
+  return c.redirect(`/admin/investors/${id}?m=request_approved_quiet`, 303);
+});
+
+adminRoutes.post("/admin/requests/:id/decline", async (c) => {
+  await c.env.DB.prepare("UPDATE access_requests SET status = 'declined', decided_at = ?, decided_by = ? WHERE id = ? AND status = 'pending'")
+    .bind(now(), c.get("session")!.email, c.req.param("id"))
+    .run();
+  return c.redirect("/admin/investors?m=request_declined", 303);
 });

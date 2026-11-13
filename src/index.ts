@@ -8,6 +8,7 @@ import { adminRoutes } from "./routes/admin";
 import { investorRoutes } from "./routes/investor";
 import { previewRoutes } from "./routes/preview";
 import { publicRoutes, testRoutes } from "./routes/public";
+import { requestRoutes } from "./routes/requests";
 import { setupRoutes } from "./routes/setup";
 import { shortLinkRoutes } from "./routes/shortlinks";
 import { needsSetup } from "./settings";
@@ -95,6 +96,7 @@ app.use("/__test/*", async (c, next) => (c.env.ENVIRONMENT === "test" && isLocal
 app.route("/", testRoutes);
 app.route("/", setupRoutes);
 app.route("/", publicRoutes);
+app.route("/", requestRoutes);
 app.route("/", investorRoutes);
 app.route("/", previewRoutes);
 app.route("/", adminRoutes);
