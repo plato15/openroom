@@ -1,0 +1,57 @@
+# Notes for AI agents
+
+You are probably here for one of two jobs: **set up a room for someone**, or **change the code**. Both are below. Human-facing detail is in [README.md](README.md); the full list of settings is its "All settings" table.
+
+## Setting up a room
+
+Ask the person which they want, then follow one path. Do not invent settings that are not in the README.
+
+**Cloudflare (default choice).** If they can click: send them to the Deploy to Cloudflare button in the README and tell them to have a Resend API key ready. If you have a shell and they have run `npx wrangler login`:
+
+```bash
+git clone https://github.com/plato15/openroom.git && cd openroom
+npm install
+npx wrangler secret put ADMIN_EMAILS     # their email, comma separated for several
+npx wrangler secret put RESEND_API_KEY   # from resend.com → API Keys
+npx wrangler deploy                      # first deploy: creates the D1 database and R2 bucket
+npm run deploy                           # applies migrations, then deploys; use this every time after
+```
+
+- Leave `APP_ORIGIN` empty unless they add a custom domain; then set it to `https://<domain>`.
+- `MAIL_FROM` defaults to `onboarding@resend.dev`, which only delivers to the Resend account owner. To email investors they must verify a domain in Resend and change `MAIL_FROM` in `wrangler.jsonc` (then `npm run deploy`).
+- Done when: opening the `*.workers.dev` URL shows "Sign in", and entering an admin email delivers a link.
+
+**Docker (they have a server).**
+
+```bash
+git clone https://github.com/plato15/openroom.git && cd openroom
+cp .env.example .env    # set DOMAIN, ADMIN_EMAILS, MAIL_FROM and one of RESEND_API_KEY / SMTP_URL / SES keys
+docker compose up -d
+docker compose logs openroom   # expect "Openroom is running on port 3000"
+```
+
+- The domain's DNS must point at the server and ports 80/443 must be open, or Caddy cannot get a certificate.
+- Data lives in the `openroom-data` volume. Tell them to back it up.
+
+**Never** put secrets in `wrangler.jsonc`, a committed file, a URL or a chat log. Use `wrangler secret put` or `.env` (git-ignored).
+
+## Changing the code
+
+```bash
+npm install
+npm run typecheck   # must be clean
+npm test            # runs the suite on the Worker AND on the Node build; both must pass
+npm run dev         # http://localhost:8799 (copy .dev.vars.example to .dev.vars first)
+```
+
+Rules that matter more than anything else (the full list is in [CONTRIBUTING.md](CONTRIBUTING.md)):
+
+1. **Access is decided in one place:** `fileForInvestor` and `visibleToInvestor` in `src/access.ts`. Every route that serves a document to an investor goes through it. Never add a second path to a file.
+2. **Unknown or forbidden means 404**, never 403, so ids cannot be probed.
+3. **Both builds run the same `src/`.** Only `src/node/` is Node-specific. Do not use Cloudflare-only or Node-only APIs elsewhere; if you must, add an adapter in `src/node/` and a test in `test/node.test.ts`.
+4. **Database changes are new files** in `migrations/` (`0006_*.sql`, ...). Never edit an existing migration. They must run on both D1 and SQLite.
+5. **Escape everything user-supplied.** Pages use `hono/html` templates (auto-escaped); emails use `esc()` in `src/email.ts`. Branding values are validated in `src/brand.ts`.
+6. **New behaviour needs a test** in `test/room.test.ts` (it runs on both builds).
+7. Copy uses plain words, no em dashes.
+
+Where things live: see the "Code map" table in the README.
