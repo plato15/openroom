@@ -4,29 +4,34 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+## 0.3.0 (13 Nov 2026)
+
 ### Added
-- **Templates.** Setup asks what the room is for (Investor data room, Selling the company, Board portal, Client or partner portal, or empty) and creates the folders. Also on the Documents page as **Start from a template**.
-- **Subfolders,** one level deep. Investors get a folder's subfolders with it. Empty subfolders stay out of the investor's view.
-- **Fold folders** on the Documents page to one line (click the folder's header), or Collapse all / Expand all. The browser remembers which are folded; a link to a folder always opens it.
-- **Delete a folder with everything in it,** after an "Are you sure?" page that lists what goes (subfolders, documents, placeholders, investor access). Works for subfolders too.
-- **Short links** for files and folders: `/deck`, `/legal`, with Copy link. People who are not signed in land on the link after signing in. Old `/d/...` links keep working.
+- **First-time setup screen.** Nothing to fill in while deploying. The first time the room is opened, the founder enters their email and a Resend key, types the 6-digit code emailed to them (which makes them the owner), picks what the room is for, then sets the company name, colours and logo with a live preview. Every step has a Back link.
+- **Templates:** Investor data room, Selling the company, Board portal, Client or partner portal, or start empty. Also on the Documents page as **Start from a template**.
+- **Subfolders,** one level deep. Investors get a folder's subfolders with it; empty subfolders stay out of their view.
 - **Placeholders.** Template subfolders hold a hidden one-page placeholder ("Pitch deck"). **Upload your version** replaces it in place and makes it visible. Placeholders are never shown to investors.
-- **First-time setup screen.** Nothing to fill in while deploying: the first time the room is opened, the founder enters their email and a Resend key, types the 6-digit code emailed to them (which makes them the owner), then sets the company name, colours and logo. Rooms deployed with `ADMIN_EMAILS` skip it.
+- **Short links** for files and folders: `/deck`, `/legal`, with **Copy link**. People who are not signed in land on the link after signing in. Old `/d/...` links keep working.
+- **Delete a folder with everything in it,** after an "Are you sure?" page that lists what goes.
+- **Fold folders** on the Documents page to one line, with Collapse all and Expand all.
 - **Settings → Email:** change the sender and Resend key in the app, for example after verifying your domain in Resend.
+
+### Changed
+- The Deploy to Cloudflare form asks nothing. `ADMIN_EMAILS` and `RESEND_API_KEY` are optional everywhere, including Docker (only `DOMAIN` is needed there).
+- The Branding tab is now called **Settings**.
+- `npm run deploy` deploys first and applies database changes after, so it also works on a brand new setup.
+- If Resend refuses the setup email, the screen says why: a key that works but can only reach your Resend account's own email until you verify a domain, an unknown key, or an unverified sender domain.
 - A room renamed without a logo shows its name in the header and emails instead of the Openroom logo.
 
-### Changed
-- The Deploy to Cloudflare form asks nothing. `ADMIN_EMAILS` and `RESEND_API_KEY` are optional everywhere, including Docker.
-- The Branding tab is now called Settings.
-
-### Upgrading
-- Rooms that already have `ADMIN_EMAILS` set keep working as before and never see the setup screen.
-
-### Changed
-- `npm run deploy` now deploys first and then applies database migrations, so it also works on a brand new setup (the database is created by the first deploy).
+### Fixed
+- SVG logos exported by design tools (for example Adobe Illustrator) were refused as "not an image".
 
 ### Docs
-- README: a route that always works when the Deploy button cannot create a repository (fork, then connect it in Cloudflare), with each error message people may see and its fix, and the Node 22 requirement for the command line.
+- README: a route that always works when the Deploy button cannot create a repository (fork, then connect it in Cloudflare), every error message people may see with its fix, and the Node 22 requirement for the command line.
+
+### Upgrading from 0.2.0
+- Database changes (0006 and 0007) apply by themselves when Cloudflare redeploys or the Docker container starts.
+- **A room without `ADMIN_EMAILS` shows the setup screen after updating, and the first person to finish it becomes the owner.** Open your room and claim it straight after updating. Rooms with `ADMIN_EMAILS` set work as before and never show it.
 
 ## 0.2.0 (13 Nov 2026)
 
