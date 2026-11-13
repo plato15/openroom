@@ -4,6 +4,9 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+### Changed
+- **The Investor data room template follows the standard due diligence checklist:** 1. Corporate, 2. Capitalization, 3. Financials, 4. Team, 5. Business plan, 6. Financing, 7. IP, with the usual items in each, so an investor's request list maps straight onto the folders. Sections and placeholders come with short links (`/corporate`, `/cap-table`, `/deck`, `/term-sheet` ...), kept when you upload over the placeholder. A link the room already uses is skipped. Bank and wire details are left out on purpose. Rooms that already used the old template are not changed.
+
 ## 0.4.0 (13 Nov 2026)
 
 ### Added
