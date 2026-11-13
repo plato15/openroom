@@ -184,7 +184,31 @@ export function sniffImage(bytes: Uint8Array): string | null {
   if (starts(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
   if (starts(0xff, 0xd8, 0xff)) return "image/jpeg";
   if (starts(0x52, 0x49, 0x46, 0x46) && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return "image/webp";
-  const head = new TextDecoder().decode(bytes.slice(0, 1024)).replace(/^﻿/, "").trimStart();
-  if (/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE svg[^>]*>\s*)?<svg[\s>]/i.test(head)) return "image/svg+xml";
-  return null;
+  return looksLikeSvg(bytes) ? "image/svg+xml" : null;
+}
+
+/**
+ * An SVG is text whose first element is <svg>. Before it, design tools write a prolog: an XML
+ * declaration, comments ("Generator: Adobe Illustrator"), and a DOCTYPE that Illustrator fills
+ * with an [ <!ENTITY ...> ] block. Skip all of that, then require <svg. Logos are at most
+ * 512 KB, so reading the whole prolog is cheap.
+ */
+function looksLikeSvg(bytes: Uint8Array): boolean {
+  let encoding = "utf-8";
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = "utf-16le";
+  else if (bytes[0] === 0xfe && bytes[1] === 0xff) encoding = "utf-16be";
+  let text: string;
+  try {
+    text = new TextDecoder(encoding).decode(bytes.slice(0, 64 * 1024));
+  } catch {
+    return false;
+  }
+  let rest = text.replace(/^\uFEFF/, "");
+  const prolog = [/^\s+/, /^<\?[\s\S]*?\?>/, /^<!--[\s\S]*?-->/, /^<!DOCTYPE[^\[>]*(\[[\s\S]*?\]\s*)?>/i];
+  for (let guard = 0; guard < 200; guard++) {
+    const re = prolog.find((r) => r.test(rest));
+    if (!re) break;
+    rest = rest.replace(re, "");
+  }
+  return /^<(svg:)?svg[\s>/]/i.test(rest);
 }
