@@ -35,7 +35,7 @@ Using an AI coding agent to set it up? Point it at [AGENTS.md](AGENTS.md).
 - **Stamping**: every PDF page, spreadsheet and Word page carries the viewer's email and the date.
 - **Activity**: every sign-in, view and download, per investor and per file.
 - **Preview** the room exactly as a given investor sees it, without signing out.
-- **Short links** for any file or folder, like `dataroom.acme.com/deck` or `dataroom.acme.com/legal`, with a **Copy link** button. Someone who is not signed in signs in first and lands right on it. A link is only a nicer address: access is checked on every open, and a link to something you cannot see looks exactly like one that does not exist. Names the room uses itself (`admin`, `room`, `setup`...) cannot be links.
+- **Short links** for any file or folder, like `dataroom.acme.com/deck` or `dataroom.acme.com/legal`, with a small copy icon before the name. Someone who is not signed in signs in first and lands right on it. A link is only a nicer address: access is checked on every open, and a link to something you cannot see looks exactly like one that does not exist. Names the room uses itself (`admin`, `room`, `setup`...) cannot be links.
 - **Replace with a new version** that keeps the link, access and history.
 - End dates per investor, instant revoke, invites by email.
 - **Request access:** a link on the sign-in page lets anyone ask for access (name, email, firm, a note). Admins get an email and approve on the Investors page, ticking the folders, which sends the invite, or decline. The page answers everyone the same way, so it never reveals who already has access.
