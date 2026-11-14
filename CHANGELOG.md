@@ -4,6 +4,8 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+## 0.5.0 (14 Nov 2026)
+
 ### Added
 - **Video.** MP4, WebM and QuickTime (.mov) files open in the browser, with skip-ahead and fullscreen, so a product demo can sit in the room next to the documents. They show in view-only folders too, and each view is counted once in Activity however many pieces the browser asks for. Video is not stamped with the viewer's email. The 50 MB upload limit is unchanged. Note: playing a video means the file reaches the viewer's browser, so Download off hides the button but cannot stop a determined person from saving it. Files whose contents are not really a video are still treated as plain downloads. The storage layer now reads byte ranges (Cloudflare R2, disk and S3-compatible).
 - **Remove a heading, keep the files.** Each subfolder's menu has "Remove heading, keep files": the files move up into the folder and the heading goes, with any placeholders you have not replaced yet. Before, the only way to lose a heading (for example "Certificate of incorporation" after you renamed the file inside it) was to delete the subfolder, which deletes its files too. That button now says "Delete subfolder and its files". And a heading over a single file follows that file: rename the file "Certificate of incorporation.pdf" to "Certificate of.pdf" and the heading becomes "Certificate of". With two or more files under a heading it stays as it is, and to keep your own wording you rename the heading after the file.
