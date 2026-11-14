@@ -249,7 +249,7 @@ Read [CHANGELOG.md](CHANGELOG.md) for each release; anything you need to do by h
 | File | Investors see |
 |---|---|
 | PDF | Native viewer, stamped; wide frame for slides, tall for documents |
-| Excel (.xlsx, .xls), CSV | Read-only table with sheet tabs, stamped (values, not formulas or charts) |
+| Excel (.xlsx), CSV, .xls | Read-only page with sheet tabs, stamped. .xlsx keeps widths, merges, fonts, fills, borders and number formats; .xls and CSV show a plain table. Values only (saved formula results), no charts or images; hidden sheets are not shown |
 | Word (.docx) | Read-only page, stamped |
 | Images | As is |
 | PowerPoint, old .doc, anything else | Download only. Upload a PDF export to show it in the browser. |
@@ -298,6 +298,7 @@ The suite runs twice: once in the real Workers runtime (Miniflare) and once agai
 | `src/updates.ts`, `scripts/update-openroom.sh` | "New version available" notice; the Update Openroom workflow's script |
 | `src/links.ts`, `src/routes/shortlinks.ts` | Short links (`/deck`), reserved names, where to go after sign-in |
 | `src/render.ts` | Excel, CSV and Word as read-only pages |
+| `src/xlsxstyle.ts` | Reads an .xlsx file's formatting (widths, merges, fonts, fills, number formats) for the Excel page |
 | `src/watermark.ts` | PDF stamping |
 | `src/email.ts` | Resend, SES and SMTP sending, and the two emails |
 | `src/node/` | The Node build: SQLite and file adapters, server |

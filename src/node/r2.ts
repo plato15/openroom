@@ -37,7 +37,7 @@ async function toBytes(value: PutValue): Promise<Uint8Array> {
   return new Uint8Array(await new Response(value).arrayBuffer());
 }
 
-/** Keys are made by the app (files/<id>, previews/<id>.v1.html, brand/header). Anything else is refused. */
+/** Keys are made by the app (files/<id>, previews/<id>.<version>.html, brand/header). Anything else is refused. */
 function checkKey(key: string) {
   if (!/^[A-Za-z0-9_-][A-Za-z0-9._/-]{0,511}$/.test(key) || key.split("/").some((p) => p === "" || p === "." || p === "..")) {
     throw new Error(`invalid object key: ${key}`);

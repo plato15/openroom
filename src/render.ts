@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import mammoth from "mammoth";
 import { brand } from "./brand";
 import * as XLSX from "xlsx";
+import { renderStyledSheets } from "./xlsxstyle";
 
 /**
  * Spreadsheets, CSV and Word files are turned into a plain HTML page we serve ourselves, so investors
@@ -20,6 +21,19 @@ const esc = (s: unknown) =>
     .replace(/"/g, "&quot;");
 
 export function renderSheet(bytes: ArrayBuffer, isCsv: boolean): string {
+  // .xlsx files keep their look (widths, merges, fonts, fills, number formats). Anything else, or a
+  // file we cannot read that way, falls back to the plain table below.
+  if (!isCsv) {
+    const styled = renderStyledSheets(bytes);
+    if (styled) {
+      const tabs =
+        styled.length > 1
+          ? `<nav class="tabs">${styled.map((s, i) => `<a href="#s${i}">${esc(s.name)}</a>`).join("")}</nav>`
+          : "";
+      const sheets = styled.map((s, i) => `<section id="s${i}">${styled.length > 1 ? `<h2>${esc(s.name)}</h2>` : ""}${s.html}</section>`).join("");
+      return `<div class="sheet">${tabs}${sheets}</div>`;
+    }
+  }
   const book = isCsv
     ? XLSX.read(new TextDecoder().decode(bytes), { type: "string", raw: true, dense: true })
     : XLSX.read(new Uint8Array(bytes), { type: "array", dense: true, cellHTML: false });
@@ -67,7 +81,7 @@ export function shell(title: string, body: string): string {
 *{box-sizing:border-box}html,body{margin:0;background:#f4f6fa;color:#0f172a;font:14px/1.5 -apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
 .stamp{position:fixed;inset:0;pointer-events:none;z-index:5;background-repeat:repeat;opacity:.13}
 .foot{position:fixed;left:0;right:0;bottom:0;z-index:6;background:${dark};color:#c7d3ea;font-size:11px;padding:5px 12px;text-align:center}
-.sheet{padding:12px 12px 40px}
+.sheet{padding:8px 8px 34px}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}.tabs a{background:#fff;border:1px solid #e3e8f0;border-radius:999px;padding:5px 12px;color:${dark};font-weight:600;text-decoration:none;font-size:13px}
 h2{font-size:15px;color:${dark};margin:18px 0 8px}section:first-of-type h2{margin-top:0}
 .scroll{overflow:auto;max-height:80vh;background:#fff;border:1px solid #e3e8f0;border-radius:10px}
@@ -75,8 +89,13 @@ table{border-collapse:collapse;font-size:13px;min-width:100%}
 th,td{border-bottom:1px solid #eef1f6;border-right:1px solid #eef1f6;padding:6px 10px;white-space:nowrap;text-align:left;vertical-align:top}
 thead th{position:sticky;top:0;background:${dark};color:#fff;font-weight:600;z-index:1}
 td.n,th.n{position:sticky;left:0;background:#f7f9fc;color:#94a3b8;font-size:11px;text-align:right;min-width:36px}thead th.n{background:${dark};z-index:2}
-tbody tr:nth-child(even) td:not(.n){background:#fafbfd}
+table:not(.xs) tbody tr:nth-child(even) td:not(.n){background:#fafbfd}
 .empty{color:#5b6478;font-size:13px}
+.scroll.fit{max-height:none;overflow-y:visible;border-radius:6px}
+table.xs{table-layout:fixed;min-width:0;font-family:Calibri,Carlito,-apple-system,"Segoe UI",Arial,sans-serif;background:#fff}
+table.xs td{border:0;padding:.15em .45em;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:clip;text-align:left}
+table.xs.grid td{border-right:1px solid #e6e9ef;border-bottom:1px solid #e6e9ef}
+table.xs td.w{white-space:pre-wrap;overflow-wrap:anywhere}
 .doc{max-width:820px;margin:16px auto 48px;background:#fff;border:1px solid #e3e8f0;border-radius:10px;padding:48px 56px;font-size:15px;line-height:1.6}
 .doc img{max-width:100%;height:auto}.doc table{border-collapse:collapse;margin:12px 0}.doc td,.doc th{border:1px solid #d6dce6;white-space:normal}
 @media (max-width:640px){.doc{margin:0;border-radius:0;border:0;padding:24px 18px}}

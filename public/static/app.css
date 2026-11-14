@@ -192,13 +192,15 @@ details.settings[open] { flex-basis: 100%; margin-left: 0; }
 .frame.pdf.portrait iframe { height: 84vh; }
 .frame.pdf.landscape iframe { height: auto; aspect-ratio: 16 / 10; max-height: 84vh; }
 .frame.page { background: #f4f6fa; }
-.frame.page.sheet iframe { height: 78vh; }
-.frame.page.doc iframe { height: 84vh; }
+.frame.page.sheet iframe { height: 92vh; }
+/* Spreadsheets get the room to spread out */
+.wrap:has(.frame.page.sheet), body:has(.frame.page.sheet) .bar-in { max-width: min(1500px, 96vw); }
+.frame.page.doc iframe { height: 92vh; }
 .frame.image { padding: 12px; text-align: center; }
 .mobile-only { display: none; }
 @media (max-width: 700px) {
   .frame.pdf { display: none; }
-  .frame.page iframe { height: 72vh; }
+  .frame.page iframe { height: 85vh; }
   .mobile-only { display: block; }
   .viewer-head .actions { width: 100%; }
   .viewer-head .actions .btn { flex: 1; }

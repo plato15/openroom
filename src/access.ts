@@ -104,7 +104,7 @@ export async function serveFile(
   return new Response(obj.body, { headers });
 }
 
-const RENDER_VERSION = "v1";
+const RENDER_VERSION = "v4"; // bump when the look of rendered pages changes: cached pages are rebuilt
 export const renderKey = (fileId: string) => `previews/${fileId}.${RENDER_VERSION}.html`;
 
 /** The rendered page for a spreadsheet, CSV or Word file, built once and kept in R2. */

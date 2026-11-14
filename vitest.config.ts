@@ -19,6 +19,6 @@ export default defineConfig(async () => {
       }),
     ],
     resolve: { alias: [{ find: /^\.\/harness$/, replacement: resolve(import.meta.dirname, "test/harness.workers.ts") }] },
-    test: { setupFiles: ["./test/setup.ts"], include: ["test/room.test.ts"] },
+    test: { setupFiles: ["./test/setup.ts"], include: ["test/room.test.ts", "test/xlsxstyle.test.ts"] },
   };
 });
