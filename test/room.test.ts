@@ -970,6 +970,69 @@ describe("subfolders, templates and placeholders", () => {
     expect((await req(`/d/${elsewhere}/view`, { cookie })).status).toBe(404);
   });
 
+  it("removes a subfolder's heading but keeps its files, and drops unreplaced placeholders", async () => {
+    const admin = await adminSession();
+    const top = await addFolder();
+    const sub = await addSubfolder(top);
+    const keep = await addFile(sub, { name: "More stuff.pdf" });
+    const ph = await addFile(sub, { name: "Bylaws.pdf" });
+    await env.DB.prepare("UPDATE files SET placeholder = 1, published = 0 WHERE id = ?").bind(ph).run();
+    const inv = await addInvestor({ folders: [top] });
+
+    const res = await req(`/admin/folders/${sub}/ungroup`, { cookie: admin, method: "POST" });
+    expect(res.status).toBe(303);
+    expect(await env.DB.prepare("SELECT id FROM folders WHERE id = ?").bind(sub).first()).toBeNull();
+    expect(await env.DB.prepare("SELECT folder_id FROM files WHERE id = ?").bind(keep).first()).toEqual({ folder_id: top });
+    expect(await env.DB.prepare("SELECT id FROM files WHERE id = ?").bind(ph).first()).toBeNull();
+
+    const cookie = await signIn(inv.email);
+    expect(await (await req("/room", { cookie })).text()).toContain("More stuff.pdf");
+    expect((await req(`/d/${keep}`, { cookie })).status).toBe(200);
+
+    // A top-level folder is not touched: this only applies to subfolders.
+    await req(`/admin/folders/${top}/ungroup`, { cookie: admin, method: "POST" });
+    expect(await env.DB.prepare("SELECT id FROM folders WHERE id = ?").bind(top).first()).toBeTruthy();
+    // And it needs an admin.
+    const sub2 = await addSubfolder(top);
+    await req(`/admin/folders/${sub2}/ungroup`, { cookie, method: "POST" });
+    expect(await env.DB.prepare("SELECT id FROM folders WHERE id = ?").bind(sub2).first()).toBeTruthy();
+  });
+
+  it("renames a heading along with the one file under it", async () => {
+    const admin = await adminSession();
+    const top = await addFolder();
+    const headingOf = async (id: string) => (await env.DB.prepare("SELECT name FROM folders WHERE id = ?").bind(id).first<{ name: string }>())?.name;
+    const rename = (file: string, name: string) => req(`/admin/files/${file}`, { cookie: admin, form: { action: "rename", name } });
+
+    // The heading follows the file's new name, without the extension.
+    const a = await addSubfolder(top);
+    await env.DB.prepare("UPDATE folders SET name = 'Certificate of incorporation' WHERE id = ?").bind(a).run();
+    const fa = await addFile(a, { name: "Certificate of incorporation.pdf" });
+    await rename(fa, "Certificate of.pdf");
+    expect(await headingOf(a)).toBe("Certificate of");
+
+    // Even when the heading had other wording, it follows the only file under it.
+    const b = await addSubfolder(top);
+    await env.DB.prepare("UPDATE folders SET name = 'More Stuff' WHERE id = ?").bind(b).run();
+    const fb = await addFile(b, { name: "Whatever.mp4" });
+    await rename(fb, "More Stuffs.mp4");
+    expect(await headingOf(b)).toBe("More Stuffs");
+
+    // Two files share the heading: left alone.
+    const c2 = await addSubfolder(top);
+    await env.DB.prepare("UPDATE folders SET name = 'Bylaws' WHERE id = ?").bind(c2).run();
+    const fc = await addFile(c2, { name: "Bylaws.pdf" });
+    await addFile(c2, { name: "Bylaws amendment.pdf" });
+    await rename(fc, "Bylaws v2.pdf");
+    expect(await headingOf(c2)).toBe("Bylaws");
+
+    // A top-level folder never takes its file's name.
+    const fd = await addFile(top, { name: "Plain.pdf" });
+    const topName = await headingOf(top);
+    await rename(fd, "Other.pdf");
+    expect(await headingOf(top)).toBe(topName);
+  });
+
   it("never lets access be granted on a subfolder directly", async () => {
     const admin = await adminSession();
     const sub = await addSubfolder(await addFolder());
