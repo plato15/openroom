@@ -252,6 +252,7 @@ Read [CHANGELOG.md](CHANGELOG.md) for each release; anything you need to do by h
 | Excel (.xlsx), CSV, .xls | Read-only page with sheet tabs, stamped. .xlsx keeps widths, merges, fonts, fills, borders and number formats; .xls and CSV show a plain table. Values only (saved formula results), no charts or images; hidden sheets are not shown |
 | Word (.docx) | Read-only page, stamped |
 | Images | As is |
+| Video (.mp4, .webm, .mov) | Plays in the browser with skip and fullscreen, even in a view-only folder. Video is not marked with the viewer's email. Up to 50 MB per file; compress larger ones (H.264 MP4 plays everywhere). The play button needs the file to reach the viewer's browser, so "Download off" hides the download button but cannot stop a determined person from saving the video: share demos you are happy to have copied. |
 | PowerPoint, old .doc, anything else | Download only. Upload a PDF export to show it in the browser. |
 
 ## Local development

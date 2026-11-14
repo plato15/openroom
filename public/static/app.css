@@ -140,6 +140,7 @@ a.file-name:hover { color: var(--blue-dark); }
 .kind-docx, .kind-doc { background: #2b65d9; }
 .kind-pptx { background: #d4652a; }
 .kind-image { background: #7a4fd6; }
+.kind-video, .kind-mp4, .kind-mov, .kind-webm { background: #c2255c; }
 .empty { margin: 4px 0; }
 .row-actions { display: flex; align-items: center; gap: 14px; }
 .row-actions .badge { min-width: 64px; text-align: center; }
@@ -197,6 +198,8 @@ details.settings[open] { flex-basis: 100%; margin-left: 0; }
 .wrap:has(.frame.page.sheet), body:has(.frame.page.sheet) .bar-in { max-width: min(1500px, 96vw); }
 .frame.page.doc iframe { height: 92vh; }
 .frame.image { padding: 12px; text-align: center; }
+.frame.video { position: relative; background: #000; }
+.frame.video video { display: block; width: 100%; max-height: 84vh; background: #000; }
 .mobile-only { display: none; }
 @media (max-width: 700px) {
   .frame.pdf { display: none; }
