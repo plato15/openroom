@@ -74,23 +74,27 @@ export function parseDateInput(value: unknown): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/** Video the browser can play itself. MP4 (H.264) plays everywhere; WebM and QuickTime on most browsers. */
+const VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
+
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /** How a file opens in the browser. null = it can only be downloaded (PowerPoint, old .doc, zip...). */
-export type ViewKind = "pdf" | "image" | "sheet" | "doc";
+export type ViewKind = "pdf" | "image" | "sheet" | "doc" | "video";
 export function viewKind(contentType: string): ViewKind | null {
   if (contentType === "application/pdf") return "pdf";
   if (["image/png", "image/jpeg", "image/webp", "image/gif"].includes(contentType)) return "image";
   if ([XLSX_TYPE, "application/vnd.ms-excel", "text/csv"].includes(contentType)) return "sheet";
   if (contentType === DOCX_TYPE) return "doc";
+  if (VIDEO_TYPES.includes(contentType)) return "video";
   return null;
 }
 
 /** Everything investors can read in the browser without downloading. */
 export const VIEWABLE_TYPES = new Set([
   "application/pdf", "image/png", "image/jpeg", "image/webp", "image/gif",
-  XLSX_TYPE, "application/vnd.ms-excel", "text/csv", DOCX_TYPE,
+  XLSX_TYPE, "application/vnd.ms-excel", "text/csv", DOCX_TYPE, ...VIDEO_TYPES,
 ]);
 
 const BY_EXTENSION: Record<string, string> = {
@@ -103,6 +107,10 @@ const BY_EXTENSION: Record<string, string> = {
   xlsx: XLSX_TYPE,
   xls: "application/vnd.ms-excel",
   csv: "text/csv",
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
   docx: DOCX_TYPE,
   doc: "application/msword",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -130,6 +138,11 @@ export function detectContentType(name: string, head: Uint8Array): string {
     "application/vnd.ms-excel": starts(0xd0, 0xcf, 0x11, 0xe0),
     "text/csv": !head.includes(0),
   };
+  // MP4 and QuickTime files have a box name (ftyp, moov...) at byte 4; WebM starts with the EBML marker.
+  const box = String.fromCharCode(head[4], head[5], head[6], head[7]);
+  ok["video/mp4"] = box === "ftyp";
+  ok["video/quicktime"] = ["ftyp", "moov", "mdat", "wide", "free", "skip"].includes(box);
+  ok["video/webm"] = starts(0x1a, 0x45, 0xdf, 0xa3);
   if (type in ok && !ok[type]) return "application/octet-stream";
   return type;
 }
@@ -137,6 +150,7 @@ export function detectContentType(name: string, head: Uint8Array): string {
 export function fileKind(contentType: string, name: string): string {
   if (contentType === "application/pdf") return "PDF";
   if (contentType.startsWith("image/")) return "Image";
+  if (contentType.startsWith("video/")) return "Video";
   if (contentType === "text/csv") return "CSV";
   const ext = name.split(".").pop()?.toUpperCase() ?? "";
   return ext && ext.length <= 5 ? ext : "File";

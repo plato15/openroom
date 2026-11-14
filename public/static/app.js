@@ -115,14 +115,16 @@ document.addEventListener("click", async (e) => {
   if (!(b instanceof HTMLElement)) return;
   e.preventDefault(); // inside a folder header, copying must not fold the folder
   const url = location.origin + (b.dataset.copy || "");
+  const icon = b.classList.contains("copy-icon");
   try {
     await navigator.clipboard.writeText(url);
-    b.textContent = "Copied";
+    if (icon) b.classList.add("copied");
+    else b.textContent = "Copied";
   } catch {
     window.prompt("Copy this link:", url);
     return;
   }
-  setTimeout(() => (b.textContent = "Copy link"), 1800);
+  setTimeout(() => (icon ? b.classList.remove("copied") : (b.textContent = "Copy link")), 1800);
 });
 
 // Folders on the Documents page fold up to one line. The browser remembers which, per room.

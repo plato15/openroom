@@ -12,18 +12,23 @@ import { randomId } from "../util";
 
 type PutValue = string | ArrayBuffer | ArrayBufferView | ReadableStream | Blob | null;
 type PutOptions = { httpMetadata?: { contentType?: string } };
+/** The same shapes R2 takes: from `offset` for `length` bytes (to the end if no length), or the last `suffix` bytes. */
+export type ByteRange = { offset?: number; length?: number; suffix?: number };
+type GetOptions = { range?: ByteRange };
 
 export type StoredObject = {
   key: string;
   size: number;
   body: ReadableStream;
+  /** Set when only part of the object was asked for: where it starts and how many bytes follow. */
+  range?: { offset: number; length: number };
   httpMetadata: { contentType?: string };
   arrayBuffer(): Promise<ArrayBuffer>;
   text(): Promise<string>;
 };
 
 export interface Bucket {
-  get(key: string): Promise<StoredObject | null>;
+  get(key: string, options?: GetOptions): Promise<StoredObject | null>;
   put(key: string, value: PutValue, options?: PutOptions): Promise<{ key: string; size: number }>;
   delete(keys: string | string[]): Promise<void>;
 }
@@ -37,7 +42,19 @@ async function toBytes(value: PutValue): Promise<Uint8Array> {
   return new Uint8Array(await new Response(value).arrayBuffer());
 }
 
-/** Keys are made by the app (files/<id>, previews/<id>.v1.html, brand/header). Anything else is refused. */
+/** Keys are made by the app (files/<id>, previews/<id>.<version>.html, brand/header). Anything else is refused. */
+/** Turns a requested range into exact start and length for an object of `size` bytes. */
+export function resolveRange(range: ByteRange, size: number): { offset: number; length: number } {
+  if (range.suffix !== undefined) {
+    const length = Math.min(Math.max(range.suffix, 0), size);
+    return { offset: size - length, length };
+  }
+  const offset = Math.max(range.offset ?? 0, 0);
+  if (offset >= size) return { offset: size, length: 0 };
+  const length = Math.min(range.length ?? size - offset, size - offset);
+  return { offset, length };
+}
+
 function checkKey(key: string) {
   if (!/^[A-Za-z0-9_-][A-Za-z0-9._/-]{0,511}$/.test(key) || key.split("/").some((p) => p === "" || p === "." || p === "..")) {
     throw new Error(`invalid object key: ${key}`);
@@ -57,7 +74,7 @@ export class DiskBucket implements Bucket {
     return p;
   }
 
-  async get(key: string): Promise<StoredObject | null> {
+  async get(key: string, options?: GetOptions): Promise<StoredObject | null> {
     const p = this.path(key);
     let size: number;
     try {
@@ -68,12 +85,18 @@ export class DiskBucket implements Bucket {
       return null;
     }
     let body: ReadableStream | null = null;
+    const range = options?.range ? resolveRange(options.range, size) : undefined;
     return {
       key,
       size,
+      range,
       httpMetadata: {},
       get body() {
-        body ??= Readable.toWeb(createReadStream(p)) as unknown as ReadableStream;
+        body ??= range
+          ? range.length === 0
+            ? new Blob([]).stream()
+            : (Readable.toWeb(createReadStream(p, { start: range.offset, end: range.offset + range.length - 1 })) as unknown as ReadableStream)
+          : (Readable.toWeb(createReadStream(p)) as unknown as ReadableStream);
         return body;
       },
       arrayBuffer: async () => {
@@ -121,13 +144,22 @@ export class S3Bucket implements Bucket {
     return `${this.base}/${key.split("/").map(encodeURIComponent).join("/")}`;
   }
 
-  async get(key: string): Promise<StoredObject | null> {
-    const res = await this.aws.fetch(this.url(key));
+  async get(key: string, options?: GetOptions): Promise<StoredObject | null> {
+    const r = options?.range;
+    const header = r ? (r.suffix !== undefined ? `bytes=-${r.suffix}` : `bytes=${r.offset ?? 0}-${r.length !== undefined ? (r.offset ?? 0) + r.length - 1 : ""}`) : undefined;
+    const res = await this.aws.fetch(this.url(key), header ? { headers: { range: header } } : undefined);
     if (res.status === 404) return null;
+    const total = Number(/\/(\d+)$/.exec(res.headers.get("content-range") ?? "")?.[1]);
+    if (res.status === 416 && Number.isFinite(total)) {
+      return { key, size: total, range: { offset: total, length: 0 }, httpMetadata: {}, body: new Blob([]).stream(), arrayBuffer: async () => new ArrayBuffer(0), text: async () => "" };
+    }
     if (!res.ok || !res.body) throw new Error(`S3 get ${res.status}`);
+    const partial = res.status === 206 && Number.isFinite(total);
+    const length = Number(res.headers.get("content-length") ?? 0);
     return {
       key,
-      size: Number(res.headers.get("content-length") ?? 0),
+      size: partial ? total : length,
+      range: partial ? { offset: Number(/bytes (\d+)-/.exec(res.headers.get("content-range") ?? "")?.[1] ?? 0), length } : undefined,
       httpMetadata: { contentType: res.headers.get("content-type") ?? undefined },
       body: res.body,
       arrayBuffer: () => res.arrayBuffer(),

@@ -81,7 +81,16 @@ export async function serveFile(
     });
   }
 
-  const obj = await c.env.FILES.get(file.r2_key);
+  // Video is played in pieces: browsers ask for byte ranges to start quickly and to let people skip ahead.
+  const video = inline && kind === "video";
+  const wanted = video ? parseRange(c.req.header("range")) : null;
+  if (wanted === "invalid") return new Response(null, { status: 416 });
+  let obj: Awaited<ReturnType<typeof c.env.FILES.get>>;
+  try {
+    obj = await c.env.FILES.get(file.r2_key, wanted ? { range: wanted } : undefined);
+  } catch {
+    return new Response(null, { status: 416 });
+  }
   if (!obj) return c.text("Not found", 404);
   const headers = new Headers({
     // Only PDFs and plain images render natively in the browser; everything else is a download.
@@ -100,11 +109,33 @@ export async function serveFile(
       return c.text(`This document cannot be shown right now. Please let ${brand().name} know.`, 422);
     }
   }
+  if (video) headers.set("accept-ranges", "bytes");
+  const part = wanted ? (obj.range as { offset: number; length: number } | undefined) : undefined;
+  if (wanted && part) {
+    if (obj.size === 0 || part.offset >= obj.size || part.length <= 0) {
+      return new Response(null, { status: 416, headers: { "content-range": `bytes */${obj.size}` } });
+    }
+    headers.set("content-range", `bytes ${part.offset}-${part.offset + part.length - 1}/${obj.size}`);
+    headers.set("content-length", String(part.length));
+    return new Response(obj.body, { status: 206, headers });
+  }
   headers.set("content-length", String(obj.size));
   return new Response(obj.body, { headers });
 }
 
-const RENDER_VERSION = "v1";
+/** The Range header as R2 takes it: "bytes=0-99", "bytes=500-" or "bytes=-200". One range only. */
+export function parseRange(header: string | undefined): R2Range | "invalid" | null {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!m || (m[1] === "" && m[2] === "")) return header.startsWith("bytes=") ? "invalid" : null;
+  if (m[1] === "") return { suffix: Number(m[2]) };
+  const offset = Number(m[1]);
+  if (m[2] === "") return { offset };
+  const end = Number(m[2]);
+  return end < offset ? "invalid" : { offset, length: end - offset + 1 };
+}
+
+const RENDER_VERSION = "v4"; // bump when the look of rendered pages changes: cached pages are rebuilt
 export const renderKey = (fileId: string) => `previews/${fileId}.${RENDER_VERSION}.html`;
 
 /** The rendered page for a spreadsheet, CSV or Word file, built once and kept in R2. */

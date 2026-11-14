@@ -47,6 +47,7 @@ const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
   folder_created: ["ok", "Folder created."],
   folder_saved: ["ok", "Folder saved."],
   folder_deleted: ["ok", "Deleted."],
+  heading_removed: ["ok", "Heading removed. Its files are now directly in the folder."],
   folder_not_empty: ["error", "Move or delete the files and subfolders in this folder first."],
   subfolder_created: ["ok", "Subfolder added."],
   template_added: ["ok", "Folders added. Upload your own version over each placeholder marked To replace."],
@@ -57,7 +58,7 @@ const MESSAGES: Record<string, [kind: "ok" | "error", text: string]> = {
   upload_none: ["error", "Choose at least one file."],
   file_saved: ["ok", "File saved."],
   file_deleted: ["ok", "File deleted."],
-  slug_saved: ["ok", "Link saved. Use Copy link to share it."],
+  slug_saved: ["ok", "Link saved. Use the copy icon next to the name to share it."],
   slug_cleared: ["ok", "Link removed."],
   slug_invalid: ["error", "Links use 3 to 60 lowercase letters, numbers and hyphens, like pitch-deck."],
   slug_taken: ["error", "Another file or folder already uses that link. Pick a different one."],
@@ -125,10 +126,10 @@ function folderLinkForm(folder: Folder) {
   </form>`;
 }
 
-/** The link, with a button that copies the full address. */
-function linkChip(slug: string | null) {
+/** A small copy icon, shown before a name. It copies the full short link; hovering shows the path. */
+function linkChip(slug: string | null, label = "this") {
   if (!slug) return "";
-  return html`<span class="link-chip"><span class="slug">/${slug}</span><button type="button" class="link-btn small" data-copy="/${slug}">Copy link</button></span>`;
+  return html`<button type="button" class="copy-icon" data-copy="/${slug}" title="Copy link: /${slug}" aria-label="Copy the link to ${label}"><svg class="i-copy" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg><svg class="i-check" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></button>`;
 }
 
 /** Upload a new version in place: same id, link, folder, visibility, download setting and history. */
@@ -236,9 +237,8 @@ adminRoutes.get("/admin", async (c) => {
               <span class="fold-arrow" aria-hidden="true"></span>
               <div class="folder-icon" aria-hidden="true"></div>
               <div class="folder-title">
-                <h2 class="h3">${folder.name} <span class="count">${real.length} ${real.length === 1 ? "file" : "files"}</span></h2>
+                <h2 class="h3">${linkChip(folder.slug, folder.name)}${folder.name} <span class="count">${real.length} ${real.length === 1 ? "file" : "files"}</span></h2>
                 ${folder.description ? html`<p class="small muted">${folder.description}</p>` : ""}
-                ${linkChip(folder.slug)}
               </div>
               <div class="folder-tags">
                 ${toReplace ? html`<span class="tag amber">${toReplace} to replace</span>` : ""}
@@ -256,7 +256,7 @@ adminRoutes.get("/admin", async (c) => {
               ${subs.map(
                 (sub) => html`<div class="subfolder admin" id="${sub.id}">
                   <div class="subfolder-head">
-                    <h3 class="subfolder-title">${sub.name} ${linkChip(sub.slug)}</h3>
+                    <h3 class="subfolder-title">${linkChip(sub.slug, sub.name)}${sub.name}</h3>
                     <span class="subfolder-actions">
                     <details class="menu">
                       <summary class="link-btn small">Add files</summary>
@@ -279,7 +279,10 @@ adminRoutes.get("/admin", async (c) => {
                           <button class="btn small ghost" type="submit">Rename</button>
                         </form>
                         ${folderLinkForm(sub)}
-                        <a class="btn small danger wide" href="/admin/folders/${sub.id}/delete">Delete subfolder</a>
+                        <form method="post" action="/admin/folders/${sub.id}/ungroup" data-confirm="Remove the heading ${sub.name}? Its files stay in ${folder.name}.">
+                          <button class="btn small ghost wide" type="submit">Remove heading, keep files</button>
+                        </form>
+                        <a class="btn small danger wide" href="/admin/folders/${sub.id}/delete">Delete subfolder and its files</a>
                       </div>
                     </details>
                     </span>
@@ -363,9 +366,9 @@ function fileRows(list: FileRow[], folder: Folder, allFolders: Folder[], statsBy
       return html`<li class="file-row">
         <span class="kind kind-${fileKind(file.content_type, file.name).toLowerCase()}">${fileKind(file.content_type, file.name)}</span>
         <span class="file-main">
-          <a class="file-name" href="/admin/preview/f/${file.id}">${file.name}</a>
+          <span class="file-title">${linkChip(file.slug, file.name)}<a class="file-name" href="/admin/preview/f/${file.id}">${file.name}</a></span>
           <span class="file-meta">
-            ${file.slug ? html`${linkChip(file.slug)} · ` : ""}${formatSize(file.size)} · ${formatDate(file.updated_at)} ·
+            ${formatSize(file.size)} · ${formatDate(file.updated_at)} ·
             <a href="/admin/files/${file.id}">${s ? `${s.opens} ${s.opens === 1 ? "open" : "opens"} by ${s.people} ${s.people === 1 ? "person" : "people"}` : "Not opened yet"}</a>
           </span>
           ${hiddenByType
@@ -537,6 +540,22 @@ adminRoutes.post("/admin/folders/:id/delete", async (c) => {
   return c.redirect(folder.parent_id ? `/admin?m=folder_deleted#${folder.parent_id}` : "/admin?m=folder_deleted", 303);
 });
 
+/**
+ * Takes a heading away without losing what is under it: the files move up into the folder, and the
+ * subfolder (with its link and any unreplaced placeholders) goes. Only for subfolders.
+ */
+adminRoutes.post("/admin/folders/:id/ungroup", async (c) => {
+  const sub = await c.env.DB.prepare("SELECT * FROM folders WHERE id = ?").bind(c.req.param("id")).first<Folder>();
+  if (!sub || !sub.parent_id) return c.redirect("/admin", 303);
+  await c.env.DB.batch([
+    c.env.DB.prepare("DELETE FROM files WHERE folder_id = ? AND placeholder = 1").bind(sub.id),
+    c.env.DB.prepare("UPDATE files SET folder_id = ?, updated_at = ? WHERE folder_id = ?").bind(sub.parent_id, now(), sub.id),
+    c.env.DB.prepare("DELETE FROM grants WHERE folder_id = ?").bind(sub.id),
+    c.env.DB.prepare("DELETE FROM folders WHERE id = ?").bind(sub.id),
+  ]);
+  return c.redirect(`/admin?m=heading_removed#${sub.parent_id}`, 303);
+});
+
 adminRoutes.post("/admin/folders/:id/upload", async (c) => {
   const folder = await c.env.DB.prepare("SELECT * FROM folders WHERE id = ?").bind(c.req.param("id")).first<Folder>();
   if (!folder) return c.text("Not found", 404);
@@ -622,6 +641,15 @@ adminRoutes.post("/admin/files/:id", async (c) => {
       const publishedSql = looksInternal(name) ? ", published = 0" : "";
       await c.env.DB.prepare(`UPDATE files SET name = ?${publishedSql} WHERE id = ?`).bind(name, file.id).run();
       await c.env.FILES.delete(renderKey(file.id)); // the rendered page carries the name as its title
+      // A heading over a single file follows that file's name: rename "More Stuff" to "More Stuffs" and the
+      // heading above it becomes "More Stuffs". With two or more files under it, the heading stays as it is.
+      // (To keep your own wording, rename the heading after the file.)
+      const sub = await c.env.DB.prepare("SELECT id FROM folders WHERE id = ? AND parent_id IS NOT NULL").bind(file.folder_id).first<{ id: string }>();
+      if (sub) {
+        const others = await c.env.DB.prepare("SELECT COUNT(*) AS n FROM files WHERE folder_id = ? AND id != ? AND placeholder = 0").bind(sub.id, file.id).first<{ n: number }>();
+        const heading = name.replace(/\.[A-Za-z0-9]{1,5}$/, "").trim().slice(0, 80);
+        if (!others?.n && heading) await c.env.DB.prepare("UPDATE folders SET name = ? WHERE id = ?").bind(heading, sub.id).run();
+      }
       break;
     }
     case "move": {

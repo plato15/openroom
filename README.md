@@ -35,7 +35,7 @@ Using an AI coding agent to set it up? Point it at [AGENTS.md](AGENTS.md).
 - **Stamping**: every PDF page, spreadsheet and Word page carries the viewer's email and the date.
 - **Activity**: every sign-in, view and download, per investor and per file.
 - **Preview** the room exactly as a given investor sees it, without signing out.
-- **Short links** for any file or folder, like `dataroom.acme.com/deck` or `dataroom.acme.com/legal`, with a **Copy link** button. Someone who is not signed in signs in first and lands right on it. A link is only a nicer address: access is checked on every open, and a link to something you cannot see looks exactly like one that does not exist. Names the room uses itself (`admin`, `room`, `setup`...) cannot be links.
+- **Short links** for any file or folder, like `dataroom.acme.com/deck` or `dataroom.acme.com/legal`, with a small copy icon before the name. Someone who is not signed in signs in first and lands right on it. A link is only a nicer address: access is checked on every open, and a link to something you cannot see looks exactly like one that does not exist. Names the room uses itself (`admin`, `room`, `setup`...) cannot be links.
 - **Replace with a new version** that keeps the link, access and history.
 - End dates per investor, instant revoke, invites by email.
 - **Request access:** a link on the sign-in page lets anyone ask for access (name, email, firm, a note). Admins get an email and approve on the Investors page, ticking the folders, which sends the invite, or decline. The page answers everyone the same way, so it never reveals who already has access.
@@ -249,9 +249,10 @@ Read [CHANGELOG.md](CHANGELOG.md) for each release; anything you need to do by h
 | File | Investors see |
 |---|---|
 | PDF | Native viewer, stamped; wide frame for slides, tall for documents |
-| Excel (.xlsx, .xls), CSV | Read-only table with sheet tabs, stamped (values, not formulas or charts) |
+| Excel (.xlsx), CSV, .xls | Read-only page with sheet tabs, stamped. .xlsx keeps widths, merges, fonts, fills, borders and number formats; .xls and CSV show a plain table. Values only (saved formula results), no charts or images; hidden sheets are not shown |
 | Word (.docx) | Read-only page, stamped |
 | Images | As is |
+| Video (.mp4, .webm, .mov) | Plays in the browser with skip and fullscreen, even in a view-only folder. Video is not marked with the viewer's email. Up to 50 MB per file; compress larger ones (H.264 MP4 plays everywhere). The play button needs the file to reach the viewer's browser, so "Download off" hides the download button but cannot stop a determined person from saving the video: share demos you are happy to have copied. |
 | PowerPoint, old .doc, anything else | Download only. Upload a PDF export to show it in the browser. |
 
 ## Local development
@@ -298,6 +299,7 @@ The suite runs twice: once in the real Workers runtime (Miniflare) and once agai
 | `src/updates.ts`, `scripts/update-openroom.sh` | "New version available" notice; the Update Openroom workflow's script |
 | `src/links.ts`, `src/routes/shortlinks.ts` | Short links (`/deck`), reserved names, where to go after sign-in |
 | `src/render.ts` | Excel, CSV and Word as read-only pages |
+| `src/xlsxstyle.ts` | Reads an .xlsx file's formatting (widths, merges, fonts, fills, number formats) for the Excel page |
 | `src/watermark.ts` | PDF stamping |
 | `src/email.ts` | Resend, SES and SMTP sending, and the two emails |
 | `src/node/` | The Node build: SQLite and file adapters, server |

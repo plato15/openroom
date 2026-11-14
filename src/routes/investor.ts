@@ -74,7 +74,9 @@ investorRoutes.get("/d/:id/view", async (c) => {
   const s = c.get("session")!;
   const file = await fileForInvestor(c.env, investorOf(c).id, c.req.param("id"));
   if (!file || !VIEWABLE_TYPES.has(file.content_type)) return c.text("Not found", 404);
-  await logEvent(c, { email: s.email, action: "view", fileId: file.id, fileName: file.name, folderName: file.folder_name });
+  // A video is fetched in several pieces; count one view, when the first piece is asked for.
+  const range = c.req.header("range");
+  if (!range || /^bytes=0-/.test(range)) await logEvent(c, { email: s.email, action: "view", fileId: file.id, fileName: file.name, folderName: file.folder_name });
   return serveFile(c, file, "inline", s.email);
 });
 

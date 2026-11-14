@@ -97,6 +97,9 @@ export function documentFrame(file: FileWithFolder, src: string, orientation: "p
     return html`<div class="frame pdf ${landscape ? "landscape" : "portrait"}"><iframe src="${src}#navpanes=0&view=${landscape ? "Fit" : "FitH"}" title="${file.name}"></iframe></div>
       <p class="mobile-only"><a class="btn wide" href="${src}">Open document</a></p>`;
   }
+  if (kind === "video") {
+    return html`<div class="frame video"><video controls controlsList="nodownload noremoteplayback" disablepictureinpicture playsinline preload="metadata" src="${src}">Your browser cannot play this video.</video></div>`;
+  }
   if (kind === "image") return html`<div class="frame image"><img src="${src}" alt="${file.name}"></div>`;
   if (kind === "sheet" || kind === "doc")
     return html`<div class="frame page ${kind}"><iframe src="${src}" title="${file.name}"></iframe></div>`;
@@ -113,10 +116,10 @@ export function viewerBody(file: FileWithFolder, links: RoomLinks, orientation: 
         <p class="muted small">${fileKind(file.content_type, file.name)} · ${formatSize(file.size)} · Updated ${formatDate(file.updated_at)}</p>
       </div>
       <div class="actions">
-        ${kind ? html`<a class="btn ghost" href="${base}/view" target="_blank" rel="noopener">Open full screen</a>` : ""}
+        ${kind && kind !== "video" ? html`<a class="btn ghost" href="${base}/view" target="_blank" rel="noopener">Open full screen</a>` : ""}
         ${file.allow_download ? html`<a class="btn" href="${base}/download">Download</a>` : ""}
       </div>
     </section>
     ${documentFrame(file, `${base}/view`, orientation)}
-    ${file.watermark && kind && kind !== "image" ? html`<p class="small muted center">Pages are marked with your email address.</p>` : ""}`;
+    ${file.watermark && kind && kind !== "image" && kind !== "video" ? html`<p class="small muted center">Pages are marked with your email address.</p>` : ""}`;
 }

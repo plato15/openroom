@@ -10,11 +10,12 @@ import { describe, expect, it } from "vitest";
 const ORIGIN = "https://dataroom.test";
 const ADMIN = "admin@example.test";
 
-type Opts = { method?: string; form?: Record<string, string | string[]> | FormData; cookie?: string; origin?: string | null };
+type Opts = { method?: string; form?: Record<string, string | string[]> | FormData; cookie?: string; origin?: string | null; headers?: Record<string, string> };
 
 async function req(path: string, opts: Opts = {}) {
   const headers = new Headers();
   if (opts.cookie) headers.set("cookie", opts.cookie);
+  for (const [k, v] of Object.entries(opts.headers ?? {})) headers.set(k, v);
   const method = opts.method ?? (opts.form ? "POST" : "GET");
   if (method !== "GET" && opts.origin !== null) headers.set("origin", opts.origin ?? ORIGIN);
   let body: BodyInit | undefined;
@@ -260,6 +261,83 @@ describe("investor access", () => {
     const cookie = await signIn(inv.email);
     expect(await (await req("/room", { cookie })).text()).not.toContain("Deck.pptx");
     expect((await req(`/d/${pptx}`, { cookie })).status).toBe(404);
+  });
+
+  it("plays MP4 video in the browser, in pieces, even in view-only folders", async () => {
+    const folder = await addFolder({ download: false, watermark: true });
+    const mp4 = new Uint8Array(1000).map((_, i) => i % 251);
+    mp4.set([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]); // a box named "ftyp" at byte 4
+    const id = await addFile(folder, { name: "Demo.mp4", type: "video/mp4", bytes: mp4 });
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+
+    expect(await (await req("/room", { cookie })).text()).toContain("Demo.mp4");
+    const pageHtml = await (await req(`/d/${id}`, { cookie })).text();
+    expect(pageHtml).toContain('class="frame video"');
+    expect(pageHtml).toContain("nodownload");
+    expect(pageHtml).not.toContain("vstamp"); // no mark over the picture
+    expect(pageHtml).not.toContain("Open full screen");
+
+    const whole = await req(`/d/${id}/view`, { cookie });
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("content-type")).toBe("video/mp4");
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    expect((await whole.arrayBuffer()).byteLength).toBe(1000);
+
+    const first = await req(`/d/${id}/view`, { cookie, headers: { range: "bytes=0-99" } });
+    expect(first.status).toBe(206);
+    expect(first.headers.get("content-range")).toBe("bytes 0-99/1000");
+    expect(first.headers.get("content-length")).toBe("100");
+    expect(new Uint8Array(await first.arrayBuffer())).toEqual(mp4.slice(0, 100));
+
+    const rest = await req(`/d/${id}/view`, { cookie, headers: { range: "bytes=900-" } });
+    expect(rest.status).toBe(206);
+    expect(rest.headers.get("content-range")).toBe("bytes 900-999/1000");
+    expect(new Uint8Array(await rest.arrayBuffer())).toEqual(mp4.slice(900));
+
+    const tail = await req(`/d/${id}/view`, { cookie, headers: { range: "bytes=-10" } });
+    expect(tail.status).toBe(206);
+    expect(tail.headers.get("content-range")).toBe("bytes 990-999/1000");
+
+    expect((await req(`/d/${id}/view`, { cookie, headers: { range: "bytes=5000-" } })).status).toBe(416);
+    expect((await req(`/d/${id}/view`, { cookie, headers: { range: "bytes=9-3" } })).status).toBe(416);
+    expect((await req(`/d/${id}/download`, { cookie })).status).toBe(404); // Download is off
+  });
+
+  it("accepts MP4, WebM and QuickTime uploads, and treats a file that is not really a video as a plain download", async () => {
+    const admin = await adminSession();
+    const folder = await addFolder();
+    const body = (head: number[]) => {
+      const b = new Uint8Array(200);
+      b.set(head);
+      return b;
+    };
+    const fd = new FormData();
+    fd.append("files", new File([body([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70])], "Demo.mp4"));
+    fd.append("files", new File([body([0x1a, 0x45, 0xdf, 0xa3])], "Clip.webm"));
+    fd.append("files", new File([body([0, 0, 0, 20, 0x6d, 0x6f, 0x6f, 0x76])], "Walkthrough.mov"));
+    fd.append("files", new File([body([1, 2, 3, 4, 5, 6, 7, 8])], "Fake.mp4"));
+    fd.append("publish", "on");
+    await req(`/admin/folders/${folder}/upload`, { cookie: admin, form: fd });
+    const rows = await env.DB.prepare("SELECT name, content_type FROM files WHERE folder_id = ? ORDER BY name").bind(folder).all<{ name: string; content_type: string }>();
+    expect(rows.results.map((r) => [r.name, r.content_type])).toEqual([
+      ["Clip.webm", "video/webm"],
+      ["Demo.mp4", "video/mp4"],
+      ["Fake.mp4", "application/octet-stream"],
+      ["Walkthrough.mov", "video/quicktime"],
+    ]);
+  });
+
+  it("counts one view for a video however many pieces the browser asks for", async () => {
+    const folder = await addFolder({ download: false });
+    const mp4 = new Uint8Array(500);
+    mp4.set([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]);
+    const id = await addFile(folder, { name: "Demo.mp4", type: "video/mp4", bytes: mp4 });
+    const inv = await addInvestor({ folders: [folder] });
+    const cookie = await signIn(inv.email);
+    for (const range of ["bytes=0-", "bytes=100-199", "bytes=200-299", "bytes=300-"]) await req(`/d/${id}/view`, { cookie, headers: { range } });
+    const views = await env.DB.prepare("SELECT COUNT(*) AS n FROM events WHERE action = 'view' AND file_id = ?").bind(id).first<{ n: number }>();
+    expect(views?.n).toBe(1);
   });
 
   it("opens Excel and CSV as a stamped table in the browser, even in view-only folders", async () => {
@@ -890,6 +968,69 @@ describe("subfolders, templates and placeholders", () => {
     expect((await req(`/d/${inSub}`, { cookie })).status).toBe(200);
     expect((await req(`/d/${elsewhere}`, { cookie })).status).toBe(404);
     expect((await req(`/d/${elsewhere}/view`, { cookie })).status).toBe(404);
+  });
+
+  it("removes a subfolder's heading but keeps its files, and drops unreplaced placeholders", async () => {
+    const admin = await adminSession();
+    const top = await addFolder();
+    const sub = await addSubfolder(top);
+    const keep = await addFile(sub, { name: "More stuff.pdf" });
+    const ph = await addFile(sub, { name: "Bylaws.pdf" });
+    await env.DB.prepare("UPDATE files SET placeholder = 1, published = 0 WHERE id = ?").bind(ph).run();
+    const inv = await addInvestor({ folders: [top] });
+
+    const res = await req(`/admin/folders/${sub}/ungroup`, { cookie: admin, method: "POST" });
+    expect(res.status).toBe(303);
+    expect(await env.DB.prepare("SELECT id FROM folders WHERE id = ?").bind(sub).first()).toBeNull();
+    expect(await env.DB.prepare("SELECT folder_id FROM files WHERE id = ?").bind(keep).first()).toEqual({ folder_id: top });
+    expect(await env.DB.prepare("SELECT id FROM files WHERE id = ?").bind(ph).first()).toBeNull();
+
+    const cookie = await signIn(inv.email);
+    expect(await (await req("/room", { cookie })).text()).toContain("More stuff.pdf");
+    expect((await req(`/d/${keep}`, { cookie })).status).toBe(200);
+
+    // A top-level folder is not touched: this only applies to subfolders.
+    await req(`/admin/folders/${top}/ungroup`, { cookie: admin, method: "POST" });
+    expect(await env.DB.prepare("SELECT id FROM folders WHERE id = ?").bind(top).first()).toBeTruthy();
+    // And it needs an admin.
+    const sub2 = await addSubfolder(top);
+    await req(`/admin/folders/${sub2}/ungroup`, { cookie, method: "POST" });
+    expect(await env.DB.prepare("SELECT id FROM folders WHERE id = ?").bind(sub2).first()).toBeTruthy();
+  });
+
+  it("renames a heading along with the one file under it", async () => {
+    const admin = await adminSession();
+    const top = await addFolder();
+    const headingOf = async (id: string) => (await env.DB.prepare("SELECT name FROM folders WHERE id = ?").bind(id).first<{ name: string }>())?.name;
+    const rename = (file: string, name: string) => req(`/admin/files/${file}`, { cookie: admin, form: { action: "rename", name } });
+
+    // The heading follows the file's new name, without the extension.
+    const a = await addSubfolder(top);
+    await env.DB.prepare("UPDATE folders SET name = 'Certificate of incorporation' WHERE id = ?").bind(a).run();
+    const fa = await addFile(a, { name: "Certificate of incorporation.pdf" });
+    await rename(fa, "Certificate of.pdf");
+    expect(await headingOf(a)).toBe("Certificate of");
+
+    // Even when the heading had other wording, it follows the only file under it.
+    const b = await addSubfolder(top);
+    await env.DB.prepare("UPDATE folders SET name = 'More Stuff' WHERE id = ?").bind(b).run();
+    const fb = await addFile(b, { name: "Whatever.mp4" });
+    await rename(fb, "More Stuffs.mp4");
+    expect(await headingOf(b)).toBe("More Stuffs");
+
+    // Two files share the heading: left alone.
+    const c2 = await addSubfolder(top);
+    await env.DB.prepare("UPDATE folders SET name = 'Bylaws' WHERE id = ?").bind(c2).run();
+    const fc = await addFile(c2, { name: "Bylaws.pdf" });
+    await addFile(c2, { name: "Bylaws amendment.pdf" });
+    await rename(fc, "Bylaws v2.pdf");
+    expect(await headingOf(c2)).toBe("Bylaws");
+
+    // A top-level folder never takes its file's name.
+    const fd = await addFile(top, { name: "Plain.pdf" });
+    const topName = await headingOf(top);
+    await rename(fd, "Other.pdf");
+    expect(await headingOf(top)).toBe(topName);
   });
 
   it("never lets access be granted on a subfolder directly", async () => {
