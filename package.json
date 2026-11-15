@@ -1,6 +1,6 @@
 {
   "name": "openroom",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "scripts": {
     "test": "vitest run && vitest run --config vitest.node.config.ts",
     "test:workers": "vitest run",

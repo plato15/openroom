@@ -4,6 +4,8 @@ Every change people running a room should know about. Newest first. Versions fol
 
 ## Unreleased
 
+## 0.5.1 (15 Nov 2026)
+
 ### Added
 - **Uploads keep your file's name.** A file you upload over a placeholder, or as a new version of a document already in the room, takes the name of the file you uploaded (a placeholder used to keep the template's name, like "Bylaws.pdf", and a replaced document kept its old name with the new extension). Its link, access and settings stay, and a heading that was over only that file follows the new name. In the Edit panel, a name you type yourself wins over the uploaded file's name.
 - **A slide-out for editing a document, with one Save.** Click Edit on a file and a panel slides in from the right: a Visible to investors switch, Name, Short link, Folder and an optional new file (the same drop box as uploads), with a single Save changes button. Delete is a quiet red link at the bottom, not a big red button, and still asks before it deletes. Click anywhere outside the panel (or an upload window) to close it.
